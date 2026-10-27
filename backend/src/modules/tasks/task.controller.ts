@@ -1,6 +1,7 @@
 
 import type { Request, Response, NextFunction } from "express";
 import {createTask,deleteTask,getTask,getTasksForWorkspace,updateTask,} from "./task.service.js";
+import type { ListTasksQuery } from "./task.validation.js";
 
 function getRouteParam(param: string | string[] | undefined): string | undefined {
   if (Array.isArray(param)) {
@@ -60,11 +61,12 @@ export async function listTasksController(
       return;
     }
 
-    const tasks = await getTasksForWorkspace(workspaceId, userId);
+    const query = res.locals.validatedQuery as ListTasksQuery;
+    const result = await getTasksForWorkspace(workspaceId,userId,query,);
 
     res.status(200).json({
       status: "success",
-      data: { tasks },
+      data: { result },
     });
   } catch (error) {
     next(error);

@@ -2,7 +2,7 @@ import { AppError } from "../../utils/app-error.js";
 import {findWorkspaceForUser,findWorkspaceMember,} from "../workspaces/workspace.repository.js";
 import {createTask as createTaskRecord,deleteTask as deleteTaskRecord,findTaskById,listTasks as listTaskRecords,updateTask as updateTaskRecord,} from "./task.repository.js";
 import type { TaskRecord } from "./task.repository.js";
-import type {CreateTaskInput,UpdateTaskInput,} from "./task.validation.js";
+import type {CreateTaskInput,UpdateTaskInput,ListTasksQuery} from "./task.validation.js";
 
 async function requireWorkspaceMembership(workspaceId: string,userId: string,): Promise<void> {
   const workspace = await findWorkspaceForUser(workspaceId, userId);
@@ -35,10 +35,14 @@ export async function createTask(workspaceId: string,userId: string,input: Creat
   return createTaskRecord(workspaceId, userId, input);
 }
 
-export async function getTasksForWorkspace(workspaceId: string, userId: string,): Promise<TaskRecord[]> {
+export async function getTasksForWorkspace(
+  workspaceId: string,
+  userId: string,
+  filters: ListTasksQuery,
+) {
   await requireWorkspaceMembership(workspaceId, userId);
 
-  return listTaskRecords(workspaceId);
+  return listTaskRecords(workspaceId, filters);
 }
 
 export async function getTask(workspaceId: string,taskId: string,userId: string,): Promise<TaskRecord> {

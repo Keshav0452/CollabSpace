@@ -72,3 +72,35 @@ export const updateTaskSchema = z
   );
 
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
+
+
+
+export const listTasksQuerySchema = z.object({
+  page: z.coerce
+    .number()
+    .int("Page must be an integer")
+    .min(1, "Page must be at least 1")
+    .default(1),
+
+  limit: z.coerce
+    .number()
+    .int("Limit must be an integer")
+    .min(1, "Limit must be at least 1")
+    .max(100, "Limit cannot exceed 100")
+    .default(20),
+
+  status: z
+    .enum(["todo", "in_progress", "done", "blocked"])
+    .optional(),
+
+  priority: z
+    .enum(["low", "medium", "high"])
+    .optional(),
+
+  assignedTo: z
+    .string()
+    .uuid("A valid assignee ID is required")
+    .optional(),
+});
+
+export type ListTasksQuery = z.infer<typeof listTasksQuerySchema>;

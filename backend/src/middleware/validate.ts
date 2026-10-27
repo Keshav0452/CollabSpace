@@ -24,3 +24,24 @@ export function validateBody(schema: ZodType) {
     next();
   };
 };
+
+export function validateQuery(schema: ZodType) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const result = schema.safeParse(req.query);
+
+    if (!result.success) {
+      res.status(400).json({
+        status: "error",
+        message: "Query validation failed",
+        errors: result.error.issues.map((issue) => ({
+          field: issue.path.join("."),
+          message: issue.message,
+        })),
+      });
+      return;
+    }
+
+    res.locals.validatedQuery = result.data;
+    next();
+  };
+}

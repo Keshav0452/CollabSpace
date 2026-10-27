@@ -2,6 +2,7 @@ import { pool } from "../../config/database.js";
 import type {
   CreateTaskInput,
   UpdateTaskInput,
+  ListTasksQuery,
 } from "./task.validation.js";
 
 export type TaskStatus = "todo" | "in_progress" | "done" | "blocked";
@@ -19,6 +20,14 @@ export interface TaskRecord {
   dueDate: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface PaginatedTasks {
+  tasks: TaskRecord[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
 const taskColumns = `
@@ -62,16 +71,66 @@ export async function createTask(workspaceId: string,createdBy: string,input: Cr
   return result.rows[0];
 }
 
-export async function listTasks(workspaceId: string,): Promise<TaskRecord[]> {
+export async function listTasks(
+  workspaceId: string,
+  filters: ListTasksQuery,
+): Promise<PaginatedTasks> {
+  const conditions: string[] = ["workspace_id = $1"];
+  const values: unknown[] = [workspaceId];
+
+  // Apply the optional status filter.
+  if (filters.status !== undefined) {
+    values.push(filters.status);
+    conditions.push(`status = $${values.length}`);
+  }
+
+  // Apply the optional priority filter.
+  if (filters.priority !== undefined) {
+    values.push(filters.priority);
+    conditions.push(`priority = $${values.length}`);
+  }
+
+  // Apply the optional assignee filter.
+  if (filters.assignedTo !== undefined) {
+    values.push(filters.assignedTo);
+    conditions.push(`assigned_to = $${values.length}`);
+  }
+
+  const whereClause = conditions.join(" AND ");
+
+  // Count all matching tasks before pagination.
+  const countResult = await pool.query<{ total: string }>(
+    `SELECT COUNT(*) AS total
+     FROM public.tasks
+     WHERE ${whereClause}`,
+    values,
+  );
+
+  const total = Number(countResult.rows[0].total);
+
+  // Calculate the number of rows to skip.
+  const offset = (filters.page - 1) * filters.limit;
+
+  // Add pagination values to the existing SQL parameters.
+  const paginatedValues = [...values, filters.limit, offset];
+
   const result = await pool.query<TaskRecord>(
     `SELECT ${taskColumns}
      FROM public.tasks
-     WHERE workspace_id = $1
-     ORDER BY created_at DESC`,
-    [workspaceId],
+     WHERE ${whereClause}
+     ORDER BY created_at DESC, id DESC
+     LIMIT $${values.length + 1}
+     OFFSET $${values.length + 2}`,
+    paginatedValues,
   );
 
-  return result.rows;
+  return {
+    tasks: result.rows,
+    total,
+    page: filters.page,
+    limit: filters.limit,
+    totalPages: Math.ceil(total / filters.limit),
+  };
 }
 
 export async function findTaskById(workspaceId: string,taskId: string,): Promise<TaskRecord | null> {
