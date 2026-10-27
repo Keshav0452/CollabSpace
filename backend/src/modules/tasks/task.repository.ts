@@ -44,31 +44,70 @@ const taskColumns = `
   updated_at AS "updatedAt"
 `;
 
-export async function createTask(workspaceId: string,createdBy: string,input: CreateTaskInput,): Promise<TaskRecord> {
-  const result = await pool.query<TaskRecord>(
-    `INSERT INTO public.tasks (
-       workspace_id,
-       title,
-       description,
-       priority,
-       assigned_to,
-       created_by,
-       due_date
-     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING ${taskColumns}`,
-    [
-      workspaceId,
-      input.title,
-      input.description ?? null,
-      input.priority ?? "medium",
-      input.assignedTo ?? null,
-      createdBy,
-      input.dueDate ?? null,
-    ],
-  );
+export async function createTask(
+  workspaceId: string,
+  createdBy: string,
+  input: CreateTaskInput,
+): Promise<TaskRecord> {
+  const client = await pool.connect();
 
-  return result.rows[0];
+  try {
+    await client.query("BEGIN");
+
+    const taskResult = await client.query<TaskRecord>(
+      `INSERT INTO public.tasks (
+         workspace_id,
+         title,
+         description,
+         priority,
+         assigned_to,
+         created_by,
+         due_date
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING ${taskColumns}`,
+      [
+        workspaceId,
+        input.title,
+        input.description ?? null,
+        input.priority ?? "medium",
+        input.assignedTo ?? null,
+        createdBy,
+        input.dueDate ?? null,
+      ],
+    );
+
+    const task = taskResult.rows[0];
+
+    await client.query(
+      `INSERT INTO public.task_activity (
+         task_id,
+         actor_id,
+         action,
+         details
+       )
+       VALUES ($1, $2, $3, $4)`,
+      [
+        task.id,
+        createdBy,
+        "created",
+        JSON.stringify({
+          title: task.title,
+          status: task.status,
+          priority: task.priority,
+        }),
+      ],
+    );
+
+    await client.query("COMMIT");
+
+    return task;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listTasks(
@@ -148,43 +187,123 @@ export async function findTaskById(workspaceId: string,taskId: string,): Promise
 export async function updateTask(
   workspaceId: string,
   taskId: string,
+  actorId: string,
   input: UpdateTaskInput,
 ): Promise<TaskRecord | null> {
-  const fields: string[] = [];
-  const values: unknown[] = [];
+  const client = await pool.connect();
 
-  function addField(column: string, value: unknown): void {
-    values.push(value);
-    fields.push(`${column} = $${values.length}`);
+  try {
+    await client.query("BEGIN");
+
+    // 1. Fetch the current task and lock it against concurrent updates.
+    const existingResult = await client.query<TaskRecord>(
+      `SELECT ${taskColumns}
+       FROM public.tasks
+       WHERE workspace_id = $1 AND id = $2
+       FOR UPDATE`,
+      [workspaceId, taskId],
+    );
+
+    const existingTask = existingResult.rows[0];
+
+    if (!existingTask) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    // 2. Update only the fields supplied by the client.
+    const columnMap: Record<string, string> = {
+      title: "title",
+      description: "description",
+      status: "status",
+      priority: "priority",
+      assignedTo: "assigned_to",
+      dueDate: "due_date",
+    };
+
+    const values: unknown[] = [workspaceId, taskId];
+    const assignments: string[] = [];
+
+    for (const [key, column] of Object.entries(columnMap)) {
+      if (Object.prototype.hasOwnProperty.call(input, key)) {
+        values.push(input[key as keyof UpdateTaskInput]);
+        assignments.push(`${column} = $${values.length}`);
+      }
+    }
+
+    if (assignments.length === 0) {
+      await client.query("ROLLBACK");
+      return existingTask;
+    }
+
+    const updatedResult = await client.query<TaskRecord>(
+      `UPDATE public.tasks
+       SET ${assignments.join(", ")}
+       WHERE workspace_id = $1 AND id = $2
+       RETURNING ${taskColumns}`,
+      values,
+    );
+
+    const updatedTask = updatedResult.rows[0];
+
+    // 3. Record activity for each field that actually changed.
+    const activityMap = [
+      ["title", "title_changed"],
+      ["description", "description_changed"],
+      ["status", "status_changed"],
+      ["priority", "priority_changed"],
+      ["assignedTo", "assignee_changed"],
+      ["dueDate", "due_date_changed"],
+    ] as const;
+
+    for (const [field, action] of activityMap) {
+      if (!Object.prototype.hasOwnProperty.call(input, field)) {
+        continue;
+      }
+
+      const oldValue = existingTask[field];
+      const newValue = updatedTask[field];
+
+      const oldComparable =
+        oldValue instanceof Date ? oldValue.toISOString() : oldValue;
+      const newComparable =
+        newValue instanceof Date ? newValue.toISOString() : newValue;
+
+      if (oldComparable === newComparable) {
+        continue;
+      }
+
+      await client.query(
+        `INSERT INTO public.task_activity
+           (task_id, actor_id, action, details)
+         VALUES ($1, $2, $3, $4)`,
+        [
+          taskId,
+          // The controller/service will pass the actor in our next refinement.
+          actorId,
+          action,
+          JSON.stringify({
+            oldValue: oldComparable,
+            newValue: newComparable,
+          }),
+        ],
+      );
+    }
+
+    await client.query("COMMIT");
+
+    return updatedTask;
+  } catch (error) {
+  try {
+    await client.query("ROLLBACK");
+  } catch {
+    // Preserve the original error if rollback also fails.
   }
 
-  if (input.title !== undefined) addField("title", input.title);
-  if (input.description !== undefined) addField("description", input.description);
-  if (input.status !== undefined) addField("status", input.status);
-  if (input.priority !== undefined) addField("priority", input.priority);
-  if (input.assignedTo !== undefined) addField("assigned_to", input.assignedTo);
-  if (input.dueDate !== undefined) addField("due_date", input.dueDate);
-
-  if (fields.length === 0) {
-    return findTaskById(workspaceId, taskId);
-  }
-
-  values.push(workspaceId);
-  const workspaceParameter = values.length;
-
-  values.push(taskId);
-  const taskParameter = values.length;
-
-  const result = await pool.query<TaskRecord>(
-    `UPDATE public.tasks
-     SET ${fields.join(", ")}
-     WHERE workspace_id = $${workspaceParameter}
-       AND id = $${taskParameter}
-     RETURNING ${taskColumns}`,
-    values,
-  );
-
-  return result.rows[0] ?? null;
+  throw error;
+} finally {
+  client.release();
+}
 }
 
 export async function deleteTask(

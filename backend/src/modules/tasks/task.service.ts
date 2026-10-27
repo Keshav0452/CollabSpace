@@ -3,6 +3,7 @@ import {findWorkspaceForUser,findWorkspaceMember,} from "../workspaces/workspace
 import {createTask as createTaskRecord,deleteTask as deleteTaskRecord,findTaskById,listTasks as listTaskRecords,updateTask as updateTaskRecord,} from "./task.repository.js";
 import type { TaskRecord } from "./task.repository.js";
 import type {CreateTaskInput,UpdateTaskInput,ListTasksQuery} from "./task.validation.js";
+import { listTaskActivity } from "./task-activity.repository.js";
 
 async function requireWorkspaceMembership(workspaceId: string,userId: string,): Promise<void> {
   const workspace = await findWorkspaceForUser(workspaceId, userId);
@@ -78,6 +79,7 @@ export async function updateTask(
   const updatedTask = await updateTaskRecord(
     workspaceId,
     taskId,
+    userId,
     input,
   );
 
@@ -100,4 +102,16 @@ export async function deleteTask(
   if (!deleted) {
     throw new AppError(404, "Task not found");
   }
+}
+
+export async function getTaskActivity(
+  workspaceId: string,
+  taskId: string,
+  userId: string,
+) {
+  // Verify workspace membership and confirm the task exists.
+  await getTask(workspaceId, taskId, userId);
+
+  // Return the task's activity history.
+  return listTaskActivity(taskId);
 }
