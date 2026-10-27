@@ -113,5 +113,5 @@ export async function getTaskActivity(
   await getTask(workspaceId, taskId, userId);
 
   // Return the task's activity history.
-  return listTaskActivity(taskId);
+  return listTaskActivity(workspaceId,taskId);
 }
