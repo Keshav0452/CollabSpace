@@ -97,3 +97,105 @@ export async function updateWorkspaceName(workspaceId: string,name: string,) {
 
   return result.rows[0] ?? null;
 }
+
+export async function findUserByEmail(email: string) {
+  const result = await pool.query(
+    `SELECT id, name, email
+     FROM public.users
+     WHERE email = $1
+     LIMIT 1`,
+    [email],
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function addWorkspaceMember(
+  workspaceId: string,
+  userId: string,
+) {
+  const result = await pool.query(
+    `INSERT INTO public.workspace_members (workspace_id, user_id, role)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (workspace_id, user_id) DO NOTHING
+     RETURNING workspace_id AS "workspaceId",
+               user_id AS "userId",
+               role,
+               joined_at AS "joinedAt"`,
+    [workspaceId, userId, "member"],
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function listWorkspaceMembers(workspaceId: string) {
+  const result = await pool.query(
+    `SELECT
+       u.id,
+       u.name,
+       u.email,
+       wm.role,
+       wm.joined_at AS "joinedAt"
+     FROM public.workspace_members wm
+     INNER JOIN public.users u
+       ON u.id = wm.user_id
+     WHERE wm.workspace_id = $1
+     ORDER BY wm.joined_at ASC`,
+    [workspaceId],
+  );
+
+  return result.rows;
+}
+
+export async function removeWorkspaceMember(
+  workspaceId: string,
+  userId: string,
+): Promise<boolean> {
+  const result = await pool.query(
+    `DELETE FROM public.workspace_members
+     WHERE workspace_id = $1
+       AND user_id = $2
+       AND role <> 'owner'
+     RETURNING user_id`,
+    [workspaceId, userId],
+  );
+
+  return result.rowCount === 1;
+}
+
+export async function findWorkspaceMember(
+  workspaceId: string,
+  userId: string,
+) {
+  const result = await pool.query(
+    `SELECT user_id AS "userId", role
+     FROM public.workspace_members
+     WHERE workspace_id = $1 AND user_id = $2
+     LIMIT 1`,
+    [workspaceId, userId],
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function updateWorkspaceMemberRole(
+  workspaceId: string,
+  userId: string,
+  role: "admin" | "member",
+) {
+  const result = await pool.query(
+    `UPDATE public.workspace_members
+     SET role = $1
+     WHERE workspace_id = $2
+       AND user_id = $3
+       AND role <> 'owner'
+     RETURNING
+       workspace_id AS "workspaceId",
+       user_id AS "userId",
+       role,
+       joined_at AS "joinedAt"`,
+    [role, workspaceId, userId],
+  );
+
+  return result.rows[0] ?? null;
+}
