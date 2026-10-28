@@ -303,6 +303,9 @@ export async function updateTask(
       newAssigneeId !== previousAssigneeId;
 
     if (assigneeChanged && newAssigneeId !== null) {
+      const notificationMessage =
+        `You have been assigned the task "${updatedTask.title}".`;
+
       await client.query(
         `INSERT INTO public.notifications (
            recipient_id,
@@ -317,7 +320,26 @@ export async function updateTask(
           actorId,
           "task_assigned",
           updatedTask.id,
-          `You have been assigned the task "${updatedTask.title}".`,
+          notificationMessage,
+        ],
+      );
+
+      // Save an outbox event in the same transaction.
+      await client.query(
+        `INSERT INTO public.outbox_events (
+           event_type,
+           payload
+         )
+         VALUES ($1, $2::jsonb)`,
+        [
+          "task.assigned",
+          JSON.stringify({
+            taskId: updatedTask.id,
+            workspaceId,
+            recipientId: newAssigneeId,
+            actorId,
+            notificationType: "task_assigned",
+          }),
         ],
       );
     }
@@ -326,15 +348,13 @@ export async function updateTask(
     const statusChanged = existingTask.status !== updatedTask.status;
 
     if (statusChanged) {
-      // A Set prevents duplicate notifications to the same user.
+      // Set prevents duplicate notifications to the same user.
       const recipientIds = new Set<string>();
 
-      // Notify the task creator unless they made the change.
       if (existingTask.createdBy !== actorId) {
         recipientIds.add(existingTask.createdBy);
       }
 
-      // Notify the previous assignee unless they made the change.
       if (
         existingTask.assignedTo &&
         existingTask.assignedTo !== actorId
@@ -343,6 +363,9 @@ export async function updateTask(
       }
 
       for (const recipientId of recipientIds) {
+        const notificationMessage =
+          `Task "${updatedTask.title}" status changed from "${existingTask.status}" to "${updatedTask.status}".`;
+
         await client.query(
           `INSERT INTO public.notifications (
              recipient_id,
@@ -357,13 +380,34 @@ export async function updateTask(
             actorId,
             "task_status_changed",
             updatedTask.id,
-            `Task "${updatedTask.title}" status changed from "${existingTask.status}" to "${updatedTask.status}".`,
+            notificationMessage,
+          ],
+        );
+
+        // Save an outbox event for this recipient.
+        await client.query(
+          `INSERT INTO public.outbox_events (
+             event_type,
+             payload
+           )
+           VALUES ($1, $2::jsonb)`,
+          [
+            "task.status_changed",
+            JSON.stringify({
+              taskId: updatedTask.id,
+              workspaceId,
+              recipientId,
+              actorId,
+              previousStatus: existingTask.status,
+              newStatus: updatedTask.status,
+              notificationType: "task_status_changed",
+            }),
           ],
         );
       }
     }
 
-    // 6. Commit the task update, activity, and notifications together.
+    // 6. Commit the task, activity, notifications, and outbox events together.
     await client.query("COMMIT");
 
     return updatedTask;

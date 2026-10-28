@@ -22,6 +22,7 @@ const commentColumns = `
   updated_at AS "updatedAt"
 `;
 
+
 export async function createComment(
   taskId: string,
   authorId: string,
@@ -50,13 +51,15 @@ export async function createComment(
       throw new Error("Comment creation returned no record");
     }
 
-    // 2. Find the task creator and current assignee.
+    // 2. Get task details needed for notifications and events.
     const taskResult = await client.query<{
+      workspaceId: string;
       createdBy: string;
       assignedTo: string | null;
       title: string;
     }>(
       `SELECT
+         workspace_id AS "workspaceId",
          created_by AS "createdBy",
          assigned_to AS "assignedTo",
          title
@@ -71,21 +74,22 @@ export async function createComment(
       throw new Error("Task not found while creating comment");
     }
 
-    // 3. Build a unique list of notification recipients.
+    // 3. Identify unique recipients, excluding the comment author.
     const recipientIds = new Set<string>();
 
-    // Notify the task creator unless they wrote the comment.
     if (task.createdBy !== authorId) {
       recipientIds.add(task.createdBy);
     }
 
-    // Notify the current assignee unless they wrote the comment.
     if (task.assignedTo && task.assignedTo !== authorId) {
       recipientIds.add(task.assignedTo);
     }
 
-    // 4. Create a notification for each recipient.
+    // 4. Create a notification and outbox event for each recipient.
     for (const recipientId of recipientIds) {
+      const notificationMessage =
+        `A new comment was added to the task "${task.title}".`;
+
       await client.query(
         `INSERT INTO public.notifications (
            recipient_id,
@@ -100,12 +104,32 @@ export async function createComment(
           authorId,
           "task_commented",
           taskId,
-          `A new comment was added to the task "${task.title}".`,
+          notificationMessage,
+        ],
+      );
+
+      // The outbox event will later be processed by a background worker.
+      await client.query(
+        `INSERT INTO public.outbox_events (
+           event_type,
+           payload
+         )
+         VALUES ($1, $2::jsonb)`,
+        [
+          "task.commented",
+          JSON.stringify({
+            taskId,
+            workspaceId: task.workspaceId,
+            commentId: comment.id,
+            recipientId,
+            actorId: authorId,
+            notificationType: "task_commented",
+          }),
         ],
       );
     }
 
-    // 5. Save the comment and notifications together.
+    // 5. Commit the comment, notifications, and outbox events together.
     await client.query("COMMIT");
 
     return comment;
