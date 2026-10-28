@@ -195,7 +195,7 @@ export async function updateTask(
   try {
     await client.query("BEGIN");
 
-    // 1. Fetch the current task and lock it against concurrent updates.
+    // 1. Fetch and lock the current task.
     const existingResult = await client.query<TaskRecord>(
       `SELECT ${taskColumns}
        FROM public.tasks
@@ -211,7 +211,7 @@ export async function updateTask(
       return null;
     }
 
-    // 2. Update only the fields supplied by the client.
+    // 2. Build the update query using only supplied fields.
     const columnMap: Record<string, string> = {
       title: "title",
       description: "description",
@@ -246,7 +246,11 @@ export async function updateTask(
 
     const updatedTask = updatedResult.rows[0];
 
-    // 3. Record activity for each field that actually changed.
+    if (!updatedTask) {
+      throw new Error("Task update returned no record");
+    }
+
+    // 3. Record activity for fields that actually changed.
     const activityMap = [
       ["title", "title_changed"],
       ["description", "description_changed"],
@@ -266,6 +270,7 @@ export async function updateTask(
 
       const oldComparable =
         oldValue instanceof Date ? oldValue.toISOString() : oldValue;
+
       const newComparable =
         newValue instanceof Date ? newValue.toISOString() : newValue;
 
@@ -279,7 +284,6 @@ export async function updateTask(
          VALUES ($1, $2, $3, $4)`,
         [
           taskId,
-          // The controller/service will pass the actor in our next refinement.
           actorId,
           action,
           JSON.stringify({
@@ -290,20 +294,90 @@ export async function updateTask(
       );
     }
 
+    // 4. Notify the new assignee when the assignment changes.
+    const previousAssigneeId = existingTask.assignedTo;
+    const newAssigneeId = updatedTask.assignedTo;
+
+    const assigneeChanged =
+      newAssigneeId !== null &&
+      newAssigneeId !== previousAssigneeId;
+
+    if (assigneeChanged && newAssigneeId !== null) {
+      await client.query(
+        `INSERT INTO public.notifications (
+           recipient_id,
+           actor_id,
+           type,
+           task_id,
+           message
+         )
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          newAssigneeId,
+          actorId,
+          "task_assigned",
+          updatedTask.id,
+          `You have been assigned the task "${updatedTask.title}".`,
+        ],
+      );
+    }
+
+    // 5. Notify the task creator and previous assignee when status changes.
+    const statusChanged = existingTask.status !== updatedTask.status;
+
+    if (statusChanged) {
+      // A Set prevents duplicate notifications to the same user.
+      const recipientIds = new Set<string>();
+
+      // Notify the task creator unless they made the change.
+      if (existingTask.createdBy !== actorId) {
+        recipientIds.add(existingTask.createdBy);
+      }
+
+      // Notify the previous assignee unless they made the change.
+      if (
+        existingTask.assignedTo &&
+        existingTask.assignedTo !== actorId
+      ) {
+        recipientIds.add(existingTask.assignedTo);
+      }
+
+      for (const recipientId of recipientIds) {
+        await client.query(
+          `INSERT INTO public.notifications (
+             recipient_id,
+             actor_id,
+             type,
+             task_id,
+             message
+           )
+           VALUES ($1, $2, $3, $4, $5)`,
+          [
+            recipientId,
+            actorId,
+            "task_status_changed",
+            updatedTask.id,
+            `Task "${updatedTask.title}" status changed from "${existingTask.status}" to "${updatedTask.status}".`,
+          ],
+        );
+      }
+    }
+
+    // 6. Commit the task update, activity, and notifications together.
     await client.query("COMMIT");
 
     return updatedTask;
   } catch (error) {
-  try {
-    await client.query("ROLLBACK");
-  } catch {
-    // Preserve the original error if rollback also fails.
-  }
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Preserve the original error if rollback also fails.
+    }
 
-  throw error;
-} finally {
-  client.release();
-}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function deleteTask(

@@ -27,18 +27,99 @@ export async function createComment(
   authorId: string,
   input: CreateCommentInput,
 ): Promise<CommentRecord> {
-  const result = await pool.query<CommentRecord>(
-    `INSERT INTO public.task_comments (
-       task_id,
-       author_id,
-       content
-     )
-     VALUES ($1, $2, $3)
-     RETURNING ${commentColumns}`,
-    [taskId, authorId, input.content],
-  );
+  const client = await pool.connect();
 
-  return result.rows[0];
+  try {
+    await client.query("BEGIN");
+
+    // 1. Insert the comment.
+    const commentResult = await client.query<CommentRecord>(
+      `INSERT INTO public.task_comments (
+         task_id,
+         author_id,
+         content
+       )
+       VALUES ($1, $2, $3)
+       RETURNING ${commentColumns}`,
+      [taskId, authorId, input.content],
+    );
+
+    const comment = commentResult.rows[0];
+
+    if (!comment) {
+      throw new Error("Comment creation returned no record");
+    }
+
+    // 2. Find the task creator and current assignee.
+    const taskResult = await client.query<{
+      createdBy: string;
+      assignedTo: string | null;
+      title: string;
+    }>(
+      `SELECT
+         created_by AS "createdBy",
+         assigned_to AS "assignedTo",
+         title
+       FROM public.tasks
+       WHERE id = $1`,
+      [taskId],
+    );
+
+    const task = taskResult.rows[0];
+
+    if (!task) {
+      throw new Error("Task not found while creating comment");
+    }
+
+    // 3. Build a unique list of notification recipients.
+    const recipientIds = new Set<string>();
+
+    // Notify the task creator unless they wrote the comment.
+    if (task.createdBy !== authorId) {
+      recipientIds.add(task.createdBy);
+    }
+
+    // Notify the current assignee unless they wrote the comment.
+    if (task.assignedTo && task.assignedTo !== authorId) {
+      recipientIds.add(task.assignedTo);
+    }
+
+    // 4. Create a notification for each recipient.
+    for (const recipientId of recipientIds) {
+      await client.query(
+        `INSERT INTO public.notifications (
+           recipient_id,
+           actor_id,
+           type,
+           task_id,
+           message
+         )
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          recipientId,
+          authorId,
+          "task_commented",
+          taskId,
+          `A new comment was added to the task "${task.title}".`,
+        ],
+      );
+    }
+
+    // 5. Save the comment and notifications together.
+    await client.query("COMMIT");
+
+    return comment;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Preserve the original error if rollback also fails.
+    }
+
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listComments(

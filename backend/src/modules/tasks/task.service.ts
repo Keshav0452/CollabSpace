@@ -4,6 +4,7 @@ import {createTask as createTaskRecord,deleteTask as deleteTaskRecord,findTaskBy
 import type { TaskRecord } from "./task.repository.js";
 import type {CreateTaskInput,UpdateTaskInput,ListTasksQuery} from "./task.validation.js";
 import { listTaskActivity } from "./task-activity.repository.js";
+import { createUserNotification } from "../notifications/notification.service.js";
 
 async function requireWorkspaceMembership(workspaceId: string,userId: string,): Promise<void> {
   const workspace = await findWorkspaceForUser(workspaceId, userId);
@@ -57,6 +58,7 @@ export async function getTask(workspaceId: string,taskId: string,userId: string,
 
   return task;
 }
+
 
 export async function updateTask(
   workspaceId: string,
