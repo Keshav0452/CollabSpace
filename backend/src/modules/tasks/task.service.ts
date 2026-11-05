@@ -14,17 +14,19 @@ async function requireWorkspaceMembership(workspaceId: string,userId: string,): 
   }
 }
 
-async function requireWorkspaceAssignee(workspaceId: string,assignedTo: string | null | undefined,): Promise<void> {
-  if (assignedTo == null) {
+async function requireWorkspaceAssignees(workspaceId: string,assigneeIds: string[] | undefined,): Promise<void> {
+  if (!assigneeIds || assigneeIds.length === 0) {
     return;
   }
 
-  const member = await findWorkspaceMember(workspaceId, assignedTo);
+  const members = await Promise.all(
+    assigneeIds.map((id) => findWorkspaceMember(workspaceId, id)),
+  );
 
-  if (!member) {
+  if (members.some((member) => !member)) {
     throw new AppError(
       400,
-      "The assignee must be a member of this workspace",
+      "All assignees must be members of this workspace",
     );
   }
 }
@@ -32,7 +34,7 @@ async function requireWorkspaceAssignee(workspaceId: string,assignedTo: string |
 export async function createTask(workspaceId: string,userId: string,input: CreateTaskInput,): Promise<TaskRecord> {
   await requireWorkspaceMembership(workspaceId, userId);
 
-  await requireWorkspaceAssignee(workspaceId, input.assignedTo);
+  await requireWorkspaceAssignees(workspaceId, input.assigneeIds);
   if (input.projectId) {
     const project = await findProject(workspaceId, input.projectId);
     if (!project || project.status !== "active") throw new AppError(400, "Select an active project in this workspace");
@@ -78,8 +80,8 @@ export async function updateTask(
     throw new AppError(404, "Task not found");
   }
 
-  if (input.assignedTo !== undefined) {
-    await requireWorkspaceAssignee(workspaceId, input.assignedTo);
+  if (input.assigneeIds !== undefined) {
+    await requireWorkspaceAssignees(workspaceId, input.assigneeIds);
   }
   if (input.projectId && input.projectId !== existingTask.projectId) {
     const project = await findProject(workspaceId, input.projectId);

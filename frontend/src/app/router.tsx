@@ -13,6 +13,7 @@ import Settings from "../features/settings/Settings";
 import CreateWorkspace from "../features/workspaces/CreateWorkspace";
 import Projects from "../features/projects/Projects";
 import Help from "../features/help/Help";
+import AcceptInvite from "../features/invites/AcceptInvite";
 
 const router = createBrowserRouter([
   {
@@ -26,6 +27,11 @@ const router = createBrowserRouter([
   {
     element: <ProtectedRoute />,
     children: [
+      {
+        // Outside AppLayout so users without a workspace can still open it.
+        path: "/invite/:token",
+        element: <AcceptInvite />,
+      },
       {
         path: "/",
         element: <AppLayout />,

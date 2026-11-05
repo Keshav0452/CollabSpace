@@ -23,5 +23,14 @@ export function useMembers() {
     return members.find((member) => member.id === userId)?.name ?? "Unknown user";
   }
 
-  return { ...query, members, getMemberName };
+  // Comma-separated names for a list of assignees.
+  function getMemberNames(userIds: string[] | null | undefined): string {
+    if (!userIds || userIds.length === 0) {
+      return "Unassigned";
+    }
+
+    return userIds.map((id) => getMemberName(id)).join(", ");
+  }
+
+  return { ...query, members, getMemberName, getMemberNames };
 }

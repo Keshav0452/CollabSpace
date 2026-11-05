@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CollabSpace Architecture</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Layout: a single-column engineering reference. Diagrams first, then a feature
+     catalogue, then a tickable script for testing as real users. */
+  :root {
+    --bg: #f5f7f9;
+    --surface: #ffffff;
+    --fg: #14202b;
+    --muted: #55677a;
+    --line: #d5dde4;
+    --accent: #0b6e8a;
+    --accent-soft: #e2f0f4;
+    --ok: #1d7a4c;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e151b;
+      --surface: #16202a;
+      --fg: #e5edf3;
+      --muted: #9cadba;
+      --line: #2a3945;
+      --accent: #5cc3de;
+      --accent-soft: #123039;
+      --ok: #55c08a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e151b;
+    --surface: #16202a;
+    --fg: #e5edf3;
+    --muted: #9cadba;
+    --line: #2a3945;
+    --accent: #5cc3de;
+    --accent-soft: #123039;
+    --ok: #55c08a;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.6;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 40px 72px;
+  }
+  .page { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
+  h1, h2, h3 { text-wrap: balance; line-height: 1.2; margin: 0; }
+  h1 { font-size: clamp(28px, 5vw, 40px); font-weight: 600; letter-spacing: -0.02em; }
+  h2 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  h3 { font-size: 16px; font-weight: 600; }
+  p { margin: 0; }
+  code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+  code { background: var(--accent-soft); padding: 1px 6px; border-radius: 4px; }
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  header { display: flex; flex-direction: column; gap: 14px; }
+  .lead { max-width: 68ch; color: var(--muted); font-size: 17px; }
+  nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  nav a { font-size: 13px; text-decoration: none; color: var(--fg); border: 1px solid var(--line); background: var(--surface); padding: 5px 12px; border-radius: 999px; }
+  nav a:hover { border-color: var(--accent); color: var(--accent); }
+
+  section { display: flex; flex-direction: column; gap: 20px; min-width: 0; scroll-margin-top: 16px; }
+  .section-intro { max-width: 70ch; color: var(--muted); }
+
+  figure { margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .fig-scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .fig-scroll svg { display: block; width: 100%; min-width: 720px; height: auto; }
+  figcaption { font-size: 13px; color: var(--muted); max-width: 80ch; }
+
+  /* SVG styling lives here because inline SVG may not carry its own <style>. */
+  svg text { fill: var(--fg); font-family: var(--font-body); font-size: 13px; }
+  svg .t-title { font-weight: 600; font-size: 14px; }
+  svg .t-sub { fill: var(--muted); font-size: 12px; }
+  svg .t-mono { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+  svg .t-num { font-family: var(--font-mono); font-size: 11px; fill: var(--accent); }
+  svg .t-lab { font-size: 11.5px; fill: var(--muted); }
+  svg .t-live { fill: var(--accent); }
+  svg .node { fill: var(--surface); stroke: var(--fg); stroke-width: 1.2; }
+  svg .node-live { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; }
+  svg .group { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 5 4; }
+  svg .wire { stroke: var(--fg); stroke-width: 1.4; fill: none; }
+  svg .wire-live { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+  svg .bracket { stroke: var(--muted); stroke-width: 1; fill: none; }
+  svg .head { fill: var(--fg); }
+  svg .head-live { fill: var(--accent); }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+  tr:last-child td { border-bottom: 0; }
+  td.yes { color: var(--ok); font-weight: 600; }
+  td.no { color: var(--muted); }
+
+  .stack { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  .stack > div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+  .stack dt { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-family: var(--font-mono); }
+  .stack dd { margin: 4px 0 0; font-size: 14px; }
+
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
+  .feature { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .feature .what { color: var(--muted); font-size: 14px; }
+  .feature h4 { margin: 4px 0 0; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); font-family: var(--font-mono); font-weight: 500; }
+  .feature ol, .feature ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+  .feature .expect { font-size: 14px; border-left: 3px solid var(--accent); padding-left: 12px; }
+
+  .cast { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .cast > div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+  .cast strong { display: block; }
+  .cast span { font-size: 13px; color: var(--muted); }
+  pre { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 13px; line-height: 1.7; }
+
+  .progress { display: flex; align-items: center; gap: 12px; position: sticky; top: env(safe-area-inset-top, 0px); background: var(--bg); padding: 10px 0; z-index: 5; font-size: 13px; color: var(--muted); }
+  .bar { flex: 1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
+  .acts { display: flex; flex-direction: column; gap: 16px; }
+  .act { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; }
+  .act h3 { margin-bottom: 4px; }
+  .act .who { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .act label { display: flex; gap: 10px; align-items: flex-start; padding: 5px 0; cursor: pointer; font-size: 14px; }
+  .act input { margin-top: 4px; accent-color: var(--accent); flex: none; }
+  .act input:checked + span { color: var(--muted); text-decoration: line-through; }
+  .reset { font: inherit; font-size: 13px; background: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; color: var(--fg); cursor: pointer; }
+  .reset:hover { border-color: var(--accent); }
+  .note { font-size: 14px; background: var(--accent-soft); border-radius: 10px; padding: 12px 16px; max-width: 80ch; }
+  @media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <header>
+    <span class="eyebrow">Project reference</span>
+    <h1>CollabSpace architecture</h1>
+    <p class="lead">A workspace and task app: a React front end, an Express API, PostgreSQL for data, and Redis with a WebSocket for live updates. This page shows how the parts fit together, what each feature does, and a script for testing it the way real users would.</p>
+    <nav aria-label="Sections">
+      <a href="#system">System</a>
+      <a href="#flow">Live notifications</a>
+      <a href="#roles">Roles</a>
+      <a href="#features">Features</a>
+      <a href="#script">Test script</a>
+    </nav>
+  </header>
+
+  <section id="system">
+    <h2>How the system is put together</h2>
+    <p class="section-intro">The browser talks to one backend process over two channels: plain HTTP for everything the user does, and a WebSocket that only receives pushes. Postgres holds all data. Redis does two small jobs.</p>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg viewBox="0 0 960 420" role="img" aria-label="The browser sends HTTP requests to the Express REST API, which reads and writes PostgreSQL. A background outbox worker claims events from PostgreSQL and publishes them to Redis. A realtime subscriber receives them from Redis and hands them to the WebSocket gateway, which pushes them to the browser.">
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0 0L10 5L0 10z"/></marker>
+            <marker id="arrL" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-live" d="M0 0L10 5L0 10z"/></marker>
+          </defs>
+
+          <!-- Browser -->
+          <rect class="node" x="20" y="50" width="230" height="320" rx="8"/>
+          <text class="t-title" x="36" y="78">Browser</text>
+          <text class="t-sub" x="36" y="100">React + TypeScript (Vite)</text>
+          <text x="36" y="136">Dashboard · Tasks</text>
+          <text x="36" y="156">Projects · Members</text>
+          <text x="36" y="176">Settings · Help · Invite</text>
+          <text class="t-sub" x="36" y="212">React Query cache</text>
+          <text class="t-sub" x="36" y="230">Auth, Workspace and</text>
+          <text class="t-sub" x="36" y="248">Realtime contexts</text>
+          <text class="t-mono" x="36" y="350">dev: localhost:5173</text>
+
+          <!-- Backend process -->
+          <rect class="group" x="370" y="28" width="280" height="370" rx="10"/>
+          <text class="t-mono" x="386" y="48">one Node process · :3000</text>
+
+          <rect class="node" x="385" y="60" width="250" height="110" rx="6"/>
+          <text class="t-title" x="400" y="83">REST API</text>
+          <text x="400" y="104">auth · workspaces · projects</text>
+          <text x="400" y="123">tasks · comments</text>
+          <text x="400" y="142">notifications · invites</text>
+          <text class="t-sub" x="400" y="161">JWT checked on every request</text>
+
+          <rect class="node-live" x="385" y="185" width="250" height="55" rx="6"/>
+          <text class="t-title" x="400" y="207">Outbox worker</text>
+          <text class="t-sub" x="400" y="226">polls every 2 s, retries up to 5×</text>
+
+          <rect class="node-live" x="385" y="258" width="250" height="52" rx="6"/>
+          <text class="t-title" x="400" y="280">Realtime subscriber</text>
+          <text class="t-sub" x="400" y="298">checks workspace membership</text>
+
+          <rect class="node-live" x="385" y="328" width="250" height="52" rx="6"/>
+          <text class="t-title" x="400" y="350">WebSocket gateway</text>
+          <text class="t-sub" x="400" y="368">must authenticate within 5 s</text>
+
+          <!-- Data stores -->
+          <rect class="node" x="740" y="40" width="200" height="165" rx="8"/>
+          <text class="t-title" x="756" y="64">PostgreSQL</text>
+          <text class="t-mono" x="756" y="86">users · workspaces</text>
+          <text class="t-mono" x="756" y="102">workspace_members</text>
+          <text class="t-mono" x="756" y="118">tasks · task_assignees</text>
+          <text class="t-mono" x="756" y="134">projects · comments</text>
+          <text class="t-mono" x="756" y="150">notifications · invites</text>
+          <text class="t-mono" x="756" y="166">task_activity</text>
+          <text class="t-mono t-live" x="756" y="182">outbox_events</text>
+
+          <rect class="node" x="740" y="225" width="200" height="165" rx="8"/>
+          <text class="t-title" x="756" y="249">Redis</text>
+          <text class="t-sub" x="756" y="272">pub/sub channel</text>
+          <text class="t-mono" x="756" y="289">collabspace:outbox-</text>
+          <text class="t-mono" x="756" y="304">events</text>
+          <text class="t-sub" x="756" y="334">login rate-limit</text>
+          <text class="t-sub" x="756" y="352">counters</text>
+
+          <!-- Wires -->
+          <line class="wire" x1="250" y1="100" x2="385" y2="100" marker-end="url(#arr)"/>
+          <text class="t-lab" x="317" y="90" text-anchor="middle">HTTP /api</text>
+          <text class="t-lab" x="317" y="118" text-anchor="middle">Bearer JWT</text>
+
+          <line class="wire" x1="635" y1="100" x2="740" y2="100" marker-start="url(#arr)" marker-end="url(#arr)"/>
+          <text class="t-lab" x="687" y="90" text-anchor="middle">SQL</text>
+
+          <line class="wire-live" x1="635" y1="195" x2="740" y2="195" marker-start="url(#arrL)" marker-end="url(#arrL)"/>
+          <text class="t-lab t-live" x="687" y="186" text-anchor="middle">claim events</text>
+
+          <line class="wire-live" x1="635" y1="234" x2="740" y2="234" marker-end="url(#arrL)"/>
+          <text class="t-lab t-live" x="687" y="224" text-anchor="middle">publish</text>
+
+          <line class="wire-live" x1="740" y1="284" x2="635" y2="284" marker-end="url(#arrL)"/>
+          <text class="t-lab t-live" x="687" y="275" text-anchor="middle">subscribe</text>
+
+          <line class="wire-live" x1="510" y1="310" x2="510" y2="328" marker-end="url(#arrL)"/>
+          <text class="t-lab t-live" x="520" y="323">per user</text>
+
+          <line class="wire-live" x1="385" y1="354" x2="250" y2="354" marker-start="url(#arrL)" marker-end="url(#arrL)"/>
+          <text class="t-lab t-live" x="317" y="344" text-anchor="middle">WebSocket /ws</text>
+          <text class="t-lab t-live" x="317" y="372" text-anchor="middle">pushes events</text>
+        </svg>
+      </div>
+      <figcaption>Black arrows are the request path. Blue arrows are the live-update path, which never blocks a request: the API only writes a row, and the worker, Redis and WebSocket carry it from there.</figcaption>
+    </figure>
+
+    <dl class="stack">
+      <div><dt>Frontend</dt><dd>React, TypeScript, Vite. Server data is cached with React Query; the WebSocket just tells it to refetch.</dd></div>
+      <div><dt>API</dt><dd>Express modules per feature (auth, workspaces, projects, tasks, comments, notifications, invites) with Zod validation.</dd></div>
+      <div><dt>Auth</dt><dd>15-minute JWTs. A per-user token version lets a password change sign out every other session.</dd></div>
+      <div><dt>Database</dt><dd>PostgreSQL with SQL migrations (<code>npm run migrate:up</code>). Every workspace-owned row carries its workspace id.</dd></div>
+    </dl>
+  </section>
+
+  <section id="flow">
+    <h2>How a live notification travels</h2>
+    <p class="section-intro">Alice assigns a task to Carol. The request finishes after one database transaction; the rest happens in the background. Because the event is stored first, it is not lost if Redis or the server is briefly down.</p>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg viewBox="0 0 960 215" role="img" aria-label="Six steps: an action, a single Postgres transaction writing the task, notification and outbox row, the outbox worker polling, Redis publishing, the subscriber checking workspace membership, and the WebSocket pushing to the recipient. The first two steps are the request; the last four run in the background.">
+          <defs>
+            <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L10 5L0 10z"/></marker>
+          </defs>
+
+          <rect class="node" x="20" y="20" width="135" height="104" rx="6"/>
+          <text class="t-num" x="32" y="40">1</text>
+          <text class="t-title" x="32" y="62">Action</text>
+          <text class="t-sub" x="32" y="82">Alice assigns</text>
+          <text class="t-sub" x="32" y="100">a task to Carol</text>
+
+          <rect class="node" x="177" y="20" width="135" height="104" rx="6"/>
+          <text class="t-num" x="189" y="40">2</text>
+          <text class="t-title" x="189" y="62">One transaction</text>
+          <text class="t-sub" x="189" y="82">task + notification</text>
+          <text class="t-sub" x="189" y="100">+ outbox row</text>
+
+          <rect class="node-live" x="334" y="20" width="135" height="104" rx="6"/>
+          <text class="t-num" x="346" y="40">3</text>
+          <text class="t-title" x="346" y="62">Outbox worker</text>
+          <text class="t-sub" x="346" y="82">polls every 2 s</text>
+          <text class="t-sub" x="346" y="100">retries up to 5×</text>
+
+          <rect class="node-live" x="491" y="20" width="135" height="104" rx="6"/>
+          <text class="t-num" x="503" y="40">4</text>
+          <text class="t-title" x="503" y="62">Redis</text>
+          <text class="t-sub" x="503" y="82">publishes to the</text>
+          <text class="t-sub" x="503" y="100">events channel</text>
+
+          <rect class="node-live" x="648" y="20" width="135" height="104" rx="6"/>
+          <text class="t-num" x="660" y="40">5</text>
+          <text class="t-title" x="660" y="62">Subscriber</text>
+          <text class="t-sub" x="660" y="82">checks recipient is</text>
+          <text class="t-sub" x="660" y="100">a workspace member</text>
+
+          <rect class="node-live" x="805" y="20" width="135" height="104" rx="6"/>
+          <text class="t-num" x="817" y="40">6</text>
+          <text class="t-title" x="817" y="62">WebSocket</text>
+          <text class="t-sub" x="817" y="82">pushes to Carol's</text>
+          <text class="t-sub" x="817" y="100">open sessions</text>
+
+          <line class="wire" x1="155" y1="72" x2="177" y2="72" marker-end="url(#arr2)"/>
+          <line class="wire" x1="312" y1="72" x2="334" y2="72" marker-end="url(#arr2)"/>
+          <line class="wire" x1="469" y1="72" x2="491" y2="72" marker-end="url(#arr2)"/>
+          <line class="wire" x1="626" y1="72" x2="648" y2="72" marker-end="url(#arr2)"/>
+          <line class="wire" x1="783" y1="72" x2="805" y2="72" marker-end="url(#arr2)"/>
+
+          <path class="bracket" d="M20 146 v10 H312 v-10"/>
+          <text class="t-lab" x="166" y="176" text-anchor="middle">the request returns here</text>
+          <path class="bracket" d="M334 146 v10 H940 v-10"/>
+          <text class="t-lab" x="637" y="176" text-anchor="middle">background: may lag a few seconds, survives a restart</text>
+        </svg>
+      </div>
+      <figcaption>Steps 1 and 2 happen inside Alice's request. After step 6 Carol's browser refetches its notifications, tasks, comments and activity, so the bell badge updates without a page refresh. Status changes and comments follow the same path.</figcaption>
+    </figure>
+  </section>
+
+  <section id="roles">
+    <h2>Who can do what</h2>
+    <p class="section-intro">Every user has one role per workspace. Test each column with a different login.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Action</th><th>Owner</th><th>Admin</th><th>Member</th></tr></thead>
+        <tbody>
+          <tr><td>View tasks, projects, members</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+          <tr><td>Create, edit, delete tasks; assign people; comment</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+          <tr><td>Edit or delete a comment</td><td colspan="3">Only the person who wrote it</td></tr>
+          <tr><td>Create and edit projects</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+          <tr><td>Archive, reactivate or delete a project</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td></tr>
+          <tr><td>Rename the workspace</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td></tr>
+          <tr><td>Create or revoke invite links; add a user by email</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td></tr>
+          <tr><td>Remove a member</td><td>Anyone except the owner</td><td>Plain members only</td><td class="no">No</td></tr>
+          <tr><td>Change someone's role</td><td class="yes">Yes</td><td class="no">No</td><td class="no">No</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="features">
+    <h2>Features and how to try each one</h2>
+    <p class="section-intro">Each card says what the feature does, what to click, and what you should see. If the result differs, that is a bug to report.</p>
+
+    <div class="features">
+
+      <article class="feature">
+        <h3>Accounts and sessions</h3>
+        <p class="what">Register, log in, log out. Login and register are limited to 10 attempts per 15 minutes per IP.</p>
+        <h4>Try</h4>
+        <ol>
+          <li>Register at <code>/register</code> with a 7-character password.</li>
+          <li>Register again with a valid one, then log out and back in.</li>
+          <li>Open <code>/tasks</code> while logged out.</li>
+        </ol>
+        <p class="expect">The short password is rejected with a clear message. Logging out sends you to <code>/login</code>, and so does the logged-out visit. After about 10 failed logins you get a "too many requests" error.</p>
+      </article>
+
+      <article class="feature">
+        <h3>Workspaces</h3>
+        <p class="what">A workspace is a private area with its own members, projects and tasks. A new user with no workspace must create or join one first.</p>
+        <h4>Try</h4>
+        <ol>
+          <li>As a brand-new user, look at the page you land on.</li>
+          <li>Create "Acme Team", then a second workspace, and switch between them.</li>
+          <li>Rename one in Settings and refresh the page.</li>
+        </ol>
+        <p class="expect">You see both "create" and "join with an invite link". Data differs per workspace, the selection survives a refresh, and the new name shows in the sidebar.</p>
+      </article>
+
+      <article class="feature">
+        <h3>Invite links</h3>
+        <p class="what">Owners and admins create a link with an expiry (1 to 30 days) and a use limit. Only a hash is stored, so the full link is shown once.</p>
+        <h4>Try</h4>
+        <ol>
+          <li>Members page → create a link for 1 person → copy it.</li>
+          <li>Open it in a second browser as a new user, register, and click Join.</li>
+          <li>Open the same link as a third user.</li>
+          <li>Create another link and revoke it, then open it.</li>
+        </ol>
+        <p class="expect">After registering you return to the invite page, not the dashboard. The joiner appears in Members. The used-up and revoked links say "invalid, expired or revoked".</p>
+      </article>
+
+      <article class="feature">
+        <h3>Members and roles</h3>
+        <p class="what">See everyone in the workspace, add a registered user by email, change roles, remove people.</p>
+        <h4>Try</h4>
+        <ol>
+          <li>Add a registered user by email; add a made-up email.</li>
+          <li>As owner, make that user an admin.</li>
+          <li>As the admin, try to remove another admin and the owner.</li>
+        </ol>
+        <p class="expect">The unknown email says no registered user exists. The role dropdown appears only for the owner. The admin cannot remove admins or the owner.</p>
+      </article>
+
+      <article class="feature">
+        <h3>Projects</h3>
+        <p class="what">Group related tasks. Projects can be archived and brought back. Deleting one keeps its tasks.</p>
+        <h4>Try</h4>
+        <ol>
+          <li>Create "Website relaunch"; create it again with different capitals.</li>
+          <li>Add tasks to it, then click "View tasks" on the card.</li>
+          <li>Archive it, then delete it.</li>
+        </ol>
+        <p class="expect">The duplicate name is refused. The card's task count matches. Archived projects can't be picked for new tasks. After deletion the tasks remain, with no project. Members don't see archive or delete.</p>
+      </article>
+
+      <article class="feature">
+        <h3>Tasks with several assignees</h3>
+        <p class="what">Title, description, priority, status, due date, project, and any number of assignees (up to 20).</p>
+        <h4>Try</h4>
+        <ol>
+          <li>Create a task and tick two people under Assignees.</li>
+          <li>Change its status from the list dropdown.</li>
+          <li>Untick everyone; then use "Assigned to me" as one of the assignees.</li>
+          <li>Search a word from a description; create 21+ tasks to see pagination.</li>
+        </ol>
+        <p class="expect">All names show comma-separated, or "Unassigned". Search covers the whole workspace. The page controls appear after 20 tasks, and changing a filter returns to page 1.</p>
+      </article>
+
+      <article class="feature">
+        <h3>Comments and activity</h3>
+        <p class="what">Open a task to discuss it. A history lists every change and who made it.</p>
+        <h4>Try</h4>
+        <ol>
+          <li>Open a task and add a comment as one user.</li>
+          <li>As another user, try to edit that comment.</li>
+          <li>Change assignees, priority and due date; read the history.</li>
+        </ol>
+        <p class="expect">Only the author sees edit and delete. The history shows entries such as "changed the assignees from A to A, B".</p>
+      </article>
+
+      <article class="feature">
+        <h3>Notifications and live updates</h3>
+        <p class="what">Assignments, status changes and comments notify the people involved, instantly if they have the app open. You are never notified about your own actions.</p>
+        <h4>Try</h4>
+        <ol>
+          <li>Keep two users in side-by-side windows.</li>
+          <li>Assign a task to the second user and watch their bell.</li>
+          <li>Have them comment and change the status; check the first user's bell.</li>
+          <li>Click a notification, then "mark all as read".</li>
+        </ol>
+        <p class="expect">The unread count rises without a refresh. Clicking opens that task. The count drops to zero after marking all as read, and stays after a refresh.</p>
+      </article>
+
+      <article class="feature">
+        <h3>Settings and security</h3>
+        <p class="what">Edit your name and email, change your password. A password change signs out your other sessions.</p>
+        <h4>Try</h4>
+        <ol>
+          <li>Log in as one user in two browsers.</li>
+          <li>In one, change the password (wrong current password first).</li>
+          <li>In the other, click anything.</li>
+        </ol>
+        <p class="expect">The wrong current password is refused. The other session is sent to login. The old password fails; the new one works.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <section id="script">
+    <h2>Test it as real users: a script</h2>
+    <p class="section-intro">Run this once from start to finish. It uses four people so every role gets exercised, and every feature above appears at least once. Your ticks are remembered in this browser.</p>
+
+    <div class="cast">
+      <div><strong>Alice</strong><span>Owner. Normal browser window.</span></div>
+      <div><strong>Bob</strong><span>Admin. Incognito window.</span></div>
+      <div><strong>Carol</strong><span>Member. A second browser or profile.</span></div>
+      <div><strong>Dave</strong><span>New user who arrives by invite. Another incognito window.</span></div>
+    </div>
+
+    <pre>cd backend  &amp;&amp; npm run migrate:up &amp;&amp; npm run dev   # terminal 1
+cd frontend &amp;&amp; npm run dev                           # terminal 2
+# open http://localhost:5173  (passwords need 8+ characters)</pre>
+
+    <p class="note">Each browser profile keeps its own login, which is why the four people need four separate windows. Invite links on <code>localhost</code> work between them because they are all on your machine.</p>
+
+    <div class="progress" aria-live="polite">
+      <span id="progress-text">0 of 0 done</span>
+      <div class="bar"><i id="progress-bar"></i></div>
+      <button class="reset" type="button" id="reset">Reset</button>
+    </div>
+
+    <div class="acts">
+
+      <div class="act">
+        <h3>Act 1: Alice starts a workspace</h3>
+        <div class="who">Alice's window</div>
+        <label><input type="checkbox" id="a1-1"><span>Register Alice and see only the create / join page.</span></label>
+        <label><input type="checkbox" id="a1-2"><span>Create the workspace "Acme Team"; you land on the dashboard as owner.</span></label>
+        <label><input type="checkbox" id="a1-3"><span>Open Members and create an unlimited invite link for 7 days. Copy it.</span></label>
+      </div>
+
+      <div class="act">
+        <h3>Act 2: People arrive</h3>
+        <div class="who">Dave, Carol, then Bob</div>
+        <label><input type="checkbox" id="a2-1"><span>Dave opens the link while logged out, registers, and is returned to the invite page.</span></label>
+        <label><input type="checkbox" id="a2-2"><span>Dave clicks Join and lands in Acme Team. Carol repeats this with the same link.</span></label>
+        <label><input type="checkbox" id="a2-3"><span>Register Bob. Alice adds him by email, then makes him an admin.</span></label>
+        <label><input type="checkbox" id="a2-4"><span>Alice's Members list shows all four with the right roles.</span></label>
+      </div>
+
+      <div class="act">
+        <h3>Act 3: Plan the work</h3>
+        <div class="who">Alice, then Bob</div>
+        <label><input type="checkbox" id="a3-1"><span>Alice creates the project "Website relaunch".</span></label>
+        <label><input type="checkbox" id="a3-2"><span>Alice creates three tasks in it with different priorities and due dates.</span></label>
+        <label><input type="checkbox" id="a3-3"><span>She assigns the first task to Bob and Dave together. The list shows both names.</span></label>
+        <label><input type="checkbox" id="a3-4"><span>Bob sees the same project and tasks from his window.</span></label>
+      </div>
+
+      <div class="act">
+        <h3>Act 4: Collaborate live</h3>
+        <div class="who">Bob, Dave and Alice side by side</div>
+        <label><input type="checkbox" id="a4-1"><span>Bob's and Dave's bells show a new notification without a refresh. Alice's does not.</span></label>
+        <label><input type="checkbox" id="a4-2"><span>Dave opens the notification, lands on the task, and writes a comment.</span></label>
+        <label><input type="checkbox" id="a4-3"><span>Alice and Bob are notified of the comment; Dave is not.</span></label>
+        <label><input type="checkbox" id="a4-4"><span>Bob changes the status to In Progress. Alice and Dave are notified.</span></label>
+        <label><input type="checkbox" id="a4-5"><span>The task history shows each change with the right person.</span></label>
+      </div>
+
+      <div class="act">
+        <h3>Act 5: Find things</h3>
+        <div class="who">Dave's window</div>
+        <label><input type="checkbox" id="a5-1"><span>Search a word from a task description in the top bar.</span></label>
+        <label><input type="checkbox" id="a5-2"><span>"Assigned to me" shows only the task he shares with Bob.</span></label>
+        <label><input type="checkbox" id="a5-3"><span>Filter by status, then clear it. Create 21 tasks to see page 2.</span></label>
+        <label><input type="checkbox" id="a5-4"><span>Dashboard numbers match what the Tasks page shows.</span></label>
+      </div>
+
+      <div class="act">
+        <h3>Act 6: Push the boundaries</h3>
+        <div class="who">Carol, Bob, then Alice</div>
+        <label><input type="checkbox" id="a6-1"><span>Carol (member) sees no invite panel, no add-by-email, no archive or delete on projects.</span></label>
+        <label><input type="checkbox" id="a6-2"><span>Carol cannot edit Dave's comment.</span></label>
+        <label><input type="checkbox" id="a6-3"><span>Bob (admin) cannot remove Alice or change roles, but can remove Carol.</span></label>
+        <label><input type="checkbox" id="a6-4"><span>Alice archives the project, then deletes it. The tasks stay.</span></label>
+        <label><input type="checkbox" id="a6-5"><span>Carol refreshes after being removed; the workspace is gone from her list.</span></label>
+        <label><input type="checkbox" id="a6-6"><span>Dave changes his password in one window; his other window is signed out.</span></label>
+      </div>
+
+    </div>
+
+    <p class="note">More detail and extra edge cases are in <code>TESTING.md</code> at the project root. If something doesn't match, note the page, the user and role, the steps, and what you expected.</p>
+  </section>
+
+</div>
+
+<script>
+  (function () {
+    var boxes = Array.prototype.slice.call(document.querySelectorAll('.act input[type="checkbox"]'));
+    var KEY = 'collabspace-test-script';
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { saved = {}; }
+
+    function save() {
+      var state = {};
+      boxes.forEach(function (b) { if (b.checked) state[b.id] = true; });
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+    }
+
+    function render() {
+      var done = boxes.filter(function (b) { return b.checked; }).length;
+      document.getElementById('progress-text').textContent = done + ' of ' + boxes.length + ' done';
+      document.getElementById('progress-bar').style.width = (boxes.length ? (done / boxes.length) * 100 : 0) + '%';
+    }
+
+    boxes.forEach(function (b) {
+      b.checked = !!saved[b.id];
+      b.addEventListener('change', function () { save(); render(); });
+    });
+
+    document.getElementById('reset').addEventListener('click', function () {
+      boxes.forEach(function (b) { b.checked = false; });
+      save();
+      render();
+    });
+
+    render();
+  })();
+</script>
+
+</body>
+</html>

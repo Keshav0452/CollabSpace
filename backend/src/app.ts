@@ -9,6 +9,7 @@ import taskRouter from "./modules/tasks/task.routes.js";
 import commentRouter from "./modules/comments/comment.routes.js";
 import notificationRouter from "./modules/notifications/notification.routes.js";
 import projectRouter from "./modules/projects/project.routes.js";
+import { inviteRouter, workspaceInviteRouter } from "./modules/invites/invite.routes.js";
 const app = express();
 
 app.disable("x-powered-by");
@@ -30,6 +31,8 @@ app.use("/api/workspaces", workspaceRouter);
 app.use("/api/workspaces", taskRouter);
 app.use("/api/workspaces", commentRouter);
 app.use("/api/workspaces", projectRouter);
+app.use("/api/workspaces", workspaceInviteRouter);
+app.use("/api/invites", inviteRouter);
 app.use("/api/notifications", notificationRouter);
 
 // Error-handling middleware must come after the routes.

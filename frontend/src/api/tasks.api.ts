@@ -14,7 +14,7 @@ export interface ApiTask {
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
-  assignedTo: string | null;
+  assigneeIds: string[];
   createdBy: string;
   dueDate: string | null;
   createdAt: string;
@@ -47,7 +47,7 @@ export interface CreateTaskInput {
   description?: string;
   priority?: TaskPriority;
   projectId?: string | null;
-  assignedTo?: string | null;
+  assigneeIds?: string[];
   dueDate?: string | null;
 }
 
@@ -58,7 +58,7 @@ export interface UpdateTaskInput {
   status?: TaskStatus;
   priority?: TaskPriority;
   projectId?: string | null;
-  assignedTo?: string | null;
+  assigneeIds?: string[];
   dueDate?: string | null;
 }
 

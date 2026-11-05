@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { pool } from "../../config/database.js";
 import type {
   CreateTaskInput,
@@ -16,7 +17,7 @@ export interface TaskRecord {
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
-  assignedTo: string | null;
+  assigneeIds: string[];
   createdBy: string;
   dueDate: Date | null;
   createdAt: Date;
@@ -31,6 +32,7 @@ export interface PaginatedTasks {
   totalPages: number;
 }
 
+// Assignees live in public.task_assignees and are aggregated into one array.
 const taskColumns = `
   id,
   workspace_id AS "workspaceId",
@@ -39,12 +41,102 @@ const taskColumns = `
   description,
   status,
   priority,
-  assigned_to AS "assignedTo",
+  COALESCE(
+    (SELECT array_agg(ta.user_id::text ORDER BY ta.assigned_at, ta.user_id)
+     FROM public.task_assignees AS ta
+     WHERE ta.task_id = tasks.id),
+    ARRAY[]::text[]
+  ) AS "assigneeIds",
   created_by AS "createdBy",
   due_date AS "dueDate",
   created_at AS "createdAt",
   updated_at AS "updatedAt"
 `;
+
+type Queryable = Pick<PoolClient, "query">;
+
+async function selectTask(
+  client: Queryable,
+  workspaceId: string,
+  taskId: string,
+): Promise<TaskRecord> {
+  const result = await client.query<TaskRecord>(
+    `SELECT ${taskColumns}
+     FROM public.tasks
+     WHERE workspace_id = $1 AND id = $2`,
+    [workspaceId, taskId],
+  );
+
+  const task = result.rows[0];
+
+  if (!task) {
+    throw new Error("Task not found after write");
+  }
+
+  return task;
+}
+
+async function addAssignees(
+  client: Queryable,
+  workspaceId: string,
+  taskId: string,
+  userIds: string[],
+): Promise<void> {
+  if (userIds.length === 0) {
+    return;
+  }
+
+  await client.query(
+    `INSERT INTO public.task_assignees (task_id, workspace_id, user_id)
+     SELECT $1, $2, unnest($3::uuid[])
+     ON CONFLICT DO NOTHING`,
+    [taskId, workspaceId, userIds],
+  );
+}
+
+// Notify each recipient (never the actor) that a task was assigned to them.
+async function notifyAssigned(
+  client: Queryable,
+  task: { id: string; title: string },
+  workspaceId: string,
+  actorId: string,
+  recipientIds: string[],
+): Promise<void> {
+  for (const recipientId of recipientIds) {
+    if (recipientId === actorId) {
+      continue;
+    }
+
+    await client.query(
+      `INSERT INTO public.notifications (
+         recipient_id, actor_id, type, task_id, message
+       ) VALUES ($1, $2, $3, $4, $5)`,
+      [
+        recipientId,
+        actorId,
+        "task_assigned",
+        task.id,
+        `You have been assigned the task "${task.title}".`,
+      ],
+    );
+
+    // Save an outbox event in the same transaction.
+    await client.query(
+      `INSERT INTO public.outbox_events (event_type, payload)
+       VALUES ($1, $2::jsonb)`,
+      [
+        "task.assigned",
+        JSON.stringify({
+          taskId: task.id,
+          workspaceId,
+          recipientId,
+          actorId,
+          notificationType: "task_assigned",
+        }),
+      ],
+    );
+  }
+}
 
 export async function createTask(
   workspaceId: string,
@@ -56,32 +148,35 @@ export async function createTask(
   try {
     await client.query("BEGIN");
 
-    const taskResult = await client.query<TaskRecord>(
+    const taskResult = await client.query<{ id: string }>(
       `INSERT INTO public.tasks (
          workspace_id,
          project_id,
          title,
          description,
          priority,
-         assigned_to,
          created_by,
          due_date
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING ${taskColumns}`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id`,
       [
         workspaceId,
         input.projectId ?? null,
         input.title,
         input.description ?? null,
         input.priority ?? "medium",
-        input.assignedTo ?? null,
         createdBy,
         input.dueDate ?? null,
       ],
     );
 
-    const task = taskResult.rows[0];
+    const taskId = taskResult.rows[0].id;
+    const assigneeIds = input.assigneeIds ?? [];
+
+    await addAssignees(client, workspaceId, taskId, assigneeIds);
+
+    const task = await selectTask(client, workspaceId, taskId);
 
     await client.query(
       `INSERT INTO public.task_activity (
@@ -103,35 +198,7 @@ export async function createTask(
       ],
     );
 
-    if (task.assignedTo && task.assignedTo !== createdBy) {
-      await client.query(
-        `INSERT INTO public.notifications (
-           recipient_id, actor_id, type, task_id, message
-         ) VALUES ($1, $2, $3, $4, $5)`,
-        [
-          task.assignedTo,
-          createdBy,
-          "task_assigned",
-          task.id,
-          `You have been assigned the task "${task.title}".`,
-        ],
-      );
-
-      await client.query(
-        `INSERT INTO public.outbox_events (event_type, payload)
-         VALUES ($1, $2::jsonb)`,
-        [
-          "task.assigned",
-          JSON.stringify({
-            taskId: task.id,
-            workspaceId,
-            recipientId: task.assignedTo,
-            actorId: createdBy,
-            notificationType: "task_assigned",
-          }),
-        ],
-      );
-    }
+    await notifyAssigned(client, task, workspaceId, createdBy, assigneeIds);
 
     await client.query("COMMIT");
 
@@ -163,10 +230,15 @@ export async function listTasks(
     conditions.push(`priority = $${values.length}`);
   }
 
-  // Apply the optional assignee filter.
+  // Apply the optional assignee filter: tasks this user is one of the assignees of.
   if (filters.assignedTo !== undefined) {
     values.push(filters.assignedTo);
-    conditions.push(`assigned_to = $${values.length}`);
+    conditions.push(
+      `EXISTS (
+         SELECT 1 FROM public.task_assignees AS f
+         WHERE f.task_id = tasks.id AND f.user_id = $${values.length}
+       )`,
+    );
   }
 
   if (filters.projectId !== undefined) {
@@ -255,13 +327,12 @@ export async function updateTask(
       return null;
     }
 
-    // 2. Build the update query using only supplied fields.
+    // 2. Build the update query using only supplied task columns.
     const columnMap: Record<string, string> = {
       title: "title",
       description: "description",
       status: "status",
       priority: "priority",
-      assignedTo: "assigned_to",
       projectId: "project_id",
       dueDate: "due_date",
     };
@@ -276,24 +347,54 @@ export async function updateTask(
       }
     }
 
-    if (assignments.length === 0) {
+    // Work out which assignees were added or removed.
+    const assigneesProvided = input.assigneeIds !== undefined;
+    const nextAssigneeIds = input.assigneeIds ?? existingTask.assigneeIds;
+    const addedAssigneeIds = nextAssigneeIds.filter(
+      (id) => !existingTask.assigneeIds.includes(id),
+    );
+    const removedAssigneeIds = existingTask.assigneeIds.filter(
+      (id) => !nextAssigneeIds.includes(id),
+    );
+    const assigneesChanged =
+      addedAssigneeIds.length > 0 || removedAssigneeIds.length > 0;
+
+    if (assignments.length === 0 && !assigneesProvided) {
       await client.query("ROLLBACK");
       return existingTask;
     }
 
-    const updatedResult = await client.query<TaskRecord>(
-      `UPDATE public.tasks
-       SET ${assignments.join(", ")}
-       WHERE workspace_id = $1 AND id = $2
-       RETURNING ${taskColumns}`,
-      values,
-    );
-
-    const updatedTask = updatedResult.rows[0];
-
-    if (!updatedTask) {
-      throw new Error("Task update returned no record");
+    if (assignments.length > 0) {
+      await client.query(
+        `UPDATE public.tasks
+         SET ${assignments.join(", ")}
+         WHERE workspace_id = $1 AND id = $2`,
+        values,
+      );
     }
+
+    if (assigneesChanged) {
+      if (removedAssigneeIds.length > 0) {
+        await client.query(
+          `DELETE FROM public.task_assignees
+           WHERE task_id = $1 AND user_id = ANY($2::uuid[])`,
+          [taskId, removedAssigneeIds],
+        );
+      }
+
+      await addAssignees(client, workspaceId, taskId, addedAssigneeIds);
+
+      if (assignments.length === 0) {
+        // Bump updated_at even when only the assignees changed.
+        await client.query(
+          `UPDATE public.tasks SET updated_at = NOW()
+           WHERE workspace_id = $1 AND id = $2`,
+          [workspaceId, taskId],
+        );
+      }
+    }
+
+    const updatedTask = await selectTask(client, workspaceId, taskId);
 
     // 3. Record activity for fields that actually changed.
     const activityMap = [
@@ -301,7 +402,6 @@ export async function updateTask(
       ["description", "description_changed"],
       ["status", "status_changed"],
       ["priority", "priority_changed"],
-      ["assignedTo", "assignee_changed"],
       ["dueDate", "due_date_changed"],
       ["projectId", "project_changed"],
     ] as const;
@@ -340,57 +440,33 @@ export async function updateTask(
       );
     }
 
-    // 4. Notify the new assignee when the assignment changes.
-    const previousAssigneeId = existingTask.assignedTo;
-    const newAssigneeId = updatedTask.assignedTo;
-
-    const assigneeChanged =
-      newAssigneeId !== null &&
-      newAssigneeId !== previousAssigneeId;
-
-    if (assigneeChanged && newAssigneeId !== null) {
-      const notificationMessage =
-        `You have been assigned the task "${updatedTask.title}".`;
-
+    if (assigneesChanged) {
       await client.query(
-        `INSERT INTO public.notifications (
-           recipient_id,
-           actor_id,
-           type,
-           task_id,
-           message
-         )
-         VALUES ($1, $2, $3, $4, $5)`,
+        `INSERT INTO public.task_activity
+           (task_id, actor_id, action, details)
+         VALUES ($1, $2, $3, $4)`,
         [
-          newAssigneeId,
+          taskId,
           actorId,
-          "task_assigned",
-          updatedTask.id,
-          notificationMessage,
-        ],
-      );
-
-      // Save an outbox event in the same transaction.
-      await client.query(
-        `INSERT INTO public.outbox_events (
-           event_type,
-           payload
-         )
-         VALUES ($1, $2::jsonb)`,
-        [
-          "task.assigned",
+          "assignee_changed",
           JSON.stringify({
-            taskId: updatedTask.id,
-            workspaceId,
-            recipientId: newAssigneeId,
-            actorId,
-            notificationType: "task_assigned",
+            oldValue: existingTask.assigneeIds,
+            newValue: updatedTask.assigneeIds,
           }),
         ],
       );
     }
 
-    // 5. Notify the task creator and previous assignee when status changes.
+    // 4. Notify newly added assignees.
+    await notifyAssigned(
+      client,
+      updatedTask,
+      workspaceId,
+      actorId,
+      addedAssigneeIds,
+    );
+
+    // 5. Notify the task creator and previous assignees when status changes.
     const statusChanged = existingTask.status !== updatedTask.status;
 
     if (statusChanged) {
@@ -401,11 +477,10 @@ export async function updateTask(
         recipientIds.add(existingTask.createdBy);
       }
 
-      if (
-        existingTask.assignedTo &&
-        existingTask.assignedTo !== actorId
-      ) {
-        recipientIds.add(existingTask.assignedTo);
+      for (const assigneeId of existingTask.assigneeIds) {
+        if (assigneeId !== actorId) {
+          recipientIds.add(assigneeId);
+        }
       }
 
       for (const recipientId of recipientIds) {

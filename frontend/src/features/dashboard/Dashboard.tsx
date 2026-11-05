@@ -43,7 +43,7 @@ function Dashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
-  const { members, getMemberName } = useMembers();
+  const { members, getMemberNames } = useMembers();
 
   const workspaceId = activeWorkspace!.id;
 
@@ -171,7 +171,7 @@ function Dashboard() {
               <thead>
                 <tr>
                   <th>Task</th>
-                  <th>Assignee</th>
+                  <th>Assignees</th>
                   <th>Priority</th>
                   <th>Status</th>
                 </tr>
@@ -185,7 +185,7 @@ function Dashboard() {
                       {task.title}
                     </td>
 
-                    <td>{getMemberName(task.assignedTo)}</td>
+                    <td>{getMemberNames(task.assigneeIds)}</td>
 
                     <td>
                       <span className={`priority priority-${task.priority}`}>

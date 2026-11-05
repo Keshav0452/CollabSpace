@@ -13,7 +13,7 @@ export interface TaskFormValues {
   description: string | null;
   priority: TaskPriority;
   status: TaskStatus;
-  assignedTo: string | null;
+  assigneeIds: string[];
   dueDate: string | null;
   projectId: string | null;
 }
@@ -47,8 +47,8 @@ function TaskForm({
   const [status, setStatus] = useState<TaskStatus>(
     initialTask?.status ?? "todo",
   );
-  const [assignedTo, setAssignedTo] = useState(
-    initialTask?.assignedTo ?? "",
+  const [assigneeIds, setAssigneeIds] = useState<string[]>(
+    initialTask?.assigneeIds ?? [],
   );
   const [projectId, setProjectId] = useState(initialTask?.projectId ?? "");
   // The date input works with YYYY-MM-DD; the API stores a full timestamp.
@@ -58,6 +58,14 @@ function TaskForm({
 
   const isEditing = Boolean(initialTask);
 
+  function toggleAssignee(memberId: string) {
+    setAssigneeIds((current) =>
+      current.includes(memberId)
+        ? current.filter((id) => id !== memberId)
+        : [...current, memberId],
+    );
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -66,7 +74,7 @@ function TaskForm({
       description: description.trim() || null,
       priority,
       status,
-      assignedTo: assignedTo || null,
+      assigneeIds,
       dueDate: dueDate ? `${dueDate}T00:00:00.000Z` : null,
       projectId: projectId || null,
     });
@@ -140,19 +148,25 @@ function TaskForm({
 
           <div className="task-form-row">
             <div className="task-form-field">
-              <label htmlFor="task-assignee">Assignee</label>
-              <select
-                id="task-assignee"
-                value={assignedTo}
-                onChange={(event) => setAssignedTo(event.target.value)}
+              <span className="task-form-label" id="task-assignees-label">
+                Assignees
+              </span>
+              <div
+                className="task-assignee-picker"
+                role="group"
+                aria-labelledby="task-assignees-label"
               >
-                <option value="">Unassigned</option>
                 {members.map((member) => (
-                  <option key={member.id} value={member.id}>
+                  <label key={member.id} className="task-assignee-option">
+                    <input
+                      type="checkbox"
+                      checked={assigneeIds.includes(member.id)}
+                      onChange={() => toggleAssignee(member.id)}
+                    />
                     {member.name}
-                  </option>
+                  </label>
                 ))}
-              </select>
+              </div>
             </div>
 
             <div className="task-form-field">

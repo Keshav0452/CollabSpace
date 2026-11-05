@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+// A task can be assigned to several workspace members; duplicates are removed.
+const assigneeIdsSchema = z
+  .array(z.string().uuid("A valid assignee ID is required"))
+  .max(20, "A task can have at most 20 assignees")
+  .transform((ids) => [...new Set(ids)]);
+
 export const createTaskSchema = z.object({
   title: z
     .string()
@@ -17,11 +23,7 @@ export const createTaskSchema = z.object({
 
   projectId: z.string().uuid("A valid project ID is required").nullable().optional(),
 
-  assignedTo: z
-    .string()
-    .uuid("A valid assignee ID is required")
-    .nullable()
-    .optional(),
+  assigneeIds: assigneeIdsSchema.optional(),
 
   dueDate: z
     .string()
@@ -58,11 +60,7 @@ export const updateTaskSchema = z
 
     projectId: z.string().uuid("A valid project ID is required").nullable().optional(),
 
-    assignedTo: z
-      .string()
-      .uuid("A valid assignee ID is required")
-      .nullable()
-      .optional(),
+    assigneeIds: assigneeIdsSchema.optional(),
 
     dueDate: z
       .string()

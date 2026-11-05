@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Layers, ArrowLeft } from "lucide-react";
 
 import { useWorkspace } from "../../context/WorkspaceContext";
+import { extractInviteToken } from "../../api/invites.api";
 
 import "./CreateWorkspace.css";
 
@@ -17,6 +18,17 @@ function CreateWorkspace() {
 
   const [workspaceName, setWorkspaceName] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [inviteInput, setInviteInput] = useState("");
+
+  function handleJoin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const token = extractInviteToken(inviteInput);
+
+    if (token) {
+      navigate(`/invite/${encodeURIComponent(token)}`);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -110,6 +122,38 @@ function CreateWorkspace() {
               : "Create workspace"}
           </button>
         </form>
+
+        <div className="join-workspace">
+          <div className="join-workspace-divider">
+            <span>or</span>
+          </div>
+
+          <form onSubmit={handleJoin}>
+            <label htmlFor="inviteLink">
+              Join an existing workspace
+            </label>
+
+            <input
+              id="inviteLink"
+              type="text"
+              placeholder="Paste an invite link or code"
+              value={inviteInput}
+              onChange={(event) => setInviteInput(event.target.value)}
+            />
+
+            <span className="workspace-input-hint">
+              Ask a workspace owner or admin for an invite link.
+            </span>
+
+            <button
+              type="submit"
+              className="join-workspace-submit"
+              disabled={!inviteInput.trim()}
+            >
+              Continue
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

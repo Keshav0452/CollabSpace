@@ -37,7 +37,7 @@ const PAGE_SIZE = 10;
 function MyTasks() {
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
-  const { members, getMemberName } = useMembers();
+  const { members, getMemberNames } = useMembers();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -127,7 +127,7 @@ function MyTasks() {
           description: values.description,
           priority: values.priority,
           status: values.status,
-          assignedTo: values.assignedTo,
+          assigneeIds: values.assigneeIds,
           dueDate: values.dueDate,
           projectId: values.projectId,
         });
@@ -137,7 +137,7 @@ function MyTasks() {
         title: values.title,
         description: values.description ?? undefined,
         priority: values.priority,
-        assignedTo: values.assignedTo,
+        assigneeIds: values.assigneeIds,
         dueDate: values.dueDate,
         projectId: values.projectId,
       });
@@ -270,7 +270,7 @@ function MyTasks() {
         {result && (
           <TaskList
             tasks={visibleTasks}
-            getMemberName={getMemberName}
+            getMemberNames={getMemberNames}
             getProjectName={(projectId) => projects.find((project) => project.id === projectId)?.name ?? "Unknown project"}
             onOpen={(task) => setDetailTaskId(task.id)}
             onStatusChange={(taskId, status) =>

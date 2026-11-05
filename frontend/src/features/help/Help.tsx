@@ -4,7 +4,7 @@ import "./Help.css";
 const topics = [
   {
     title: "Workspaces and members",
-    description: "A workspace is the shared area for your team. Owners and admins can add registered users by email, remove members, and manage roles.",
+    description: "A workspace is the shared area for your team. Owners and admins can create invite links (with an expiry and optional use limit) so people can join after signing in or registering, add registered users by email, remove members, and manage roles. If you have no workspace yet, paste an invite link on the create-workspace page to join one.",
   },
   {
     title: "Projects",
@@ -12,7 +12,7 @@ const topics = [
   },
   {
     title: "Tasks",
-    description: "Tasks support descriptions, priorities, status, due dates, assignees, comments, and activity history. Search is performed across the workspace task records.",
+    description: "Tasks support descriptions, priorities, status, due dates, multiple assignees, comments, and activity history. Search is performed across the workspace task records.",
   },
   {
     title: "Notifications and live updates",

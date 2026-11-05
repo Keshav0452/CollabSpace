@@ -7,7 +7,7 @@ CollabSpace is a collaborative workspace and task-management application built w
 - Account registration, login, profile editing, and password changes
 - Workspace creation, selection, renaming, and member/role management
 - Project creation, editing, archiving/reactivation, deletion, and task counts
-- Task creation, editing, deletion, status/priority, assignment, due dates, project association, search, filtering, and pagination
+- Task creation, editing, deletion, status/priority, multiple assignees per task, due dates, project association, search, filtering, and pagination
 - Task comments and activity history
 - Notifications with read/unread actions and task deep links
 - Redis Pub/Sub, Redis-backed authentication rate limiting, WebSocket updates, and PostgreSQL Outbox processing
@@ -127,3 +127,11 @@ cd ../frontend && npm ci && npm run build
 ```
 
 The API and realtime integrations should also be verified against a running PostgreSQL/Redis environment with multiple authenticated browser sessions.
+
+## Multiple assignees
+
+Migration `1793172000000_create-task-assignees.sql` replaces `tasks.assigned_to` with a `task_assignees` join table, so a task can have several assignees. Existing assignees are migrated automatically. The API now uses `assigneeIds: string[]` on create/update and in task responses; the `assignedTo` list filter still works and matches tasks where that user is one of the assignees. Run `npm run migrate:up` in `backend/` after pulling.
+
+## Workspace invite links
+
+Migration `1793173000000_create-workspace-invites.sql` adds `workspace_invites`. Owners and admins create links from the Members page (expiry 1-30 days, optional max uses) and can revoke them. Only a SHA-256 hash of the token is stored, so the full link is shown once at creation. Opening `/invite/<token>` (after login/registration) lets a user join as a `member`; existing members don't consume a use. Users with no workspace can paste a link or code on the create-workspace page. Token endpoints (`GET /api/invites/:token`, `POST /api/invites/:token/accept`) are rate-limited. Run `npm run migrate:up` in `backend/` after pulling.

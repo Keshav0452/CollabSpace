@@ -5,7 +5,7 @@ import type { TaskStatus } from "../types";
 
 interface TaskListProps {
   tasks: ApiTask[];
-  getMemberName: (userId: string | null) => string;
+  getMemberNames: (userIds: string[]) => string;
   getProjectName: (projectId: string | null) => string;
   onOpen: (task: ApiTask) => void;
   onStatusChange: (taskId: string, status: TaskStatus) => void;
@@ -15,7 +15,7 @@ interface TaskListProps {
 
 function TaskList({
   tasks,
-  getMemberName,
+  getMemberNames,
   getProjectName,
   onOpen,
   onStatusChange,
@@ -108,7 +108,7 @@ function TaskList({
             </select>
 
             <span className="task-assignee">
-              {getMemberName(task.assignedTo)}
+              {getMemberNames(task.assigneeIds)}
             </span>
 
             <button

@@ -55,13 +55,18 @@ export async function createComment(
     const taskResult = await client.query<{
       workspaceId: string;
       createdBy: string;
-      assignedTo: string | null;
+      assigneeIds: string[];
       title: string;
     }>(
       `SELECT
          workspace_id AS "workspaceId",
          created_by AS "createdBy",
-         assigned_to AS "assignedTo",
+         COALESCE(
+           (SELECT array_agg(ta.user_id::text)
+            FROM public.task_assignees AS ta
+            WHERE ta.task_id = tasks.id),
+           ARRAY[]::text[]
+         ) AS "assigneeIds",
          title
        FROM public.tasks
        WHERE id = $1`,
@@ -81,8 +86,10 @@ export async function createComment(
       recipientIds.add(task.createdBy);
     }
 
-    if (task.assignedTo && task.assignedTo !== authorId) {
-      recipientIds.add(task.assignedTo);
+    for (const assigneeId of task.assigneeIds) {
+      if (assigneeId !== authorId) {
+        recipientIds.add(assigneeId);
+      }
     }
 
     // 4. Create a notification and outbox event for each recipient.

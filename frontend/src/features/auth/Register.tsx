@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import Button from "../../components/ui/Button";
 import "./Auth.css";
@@ -8,6 +8,13 @@ import "./Auth.css";
 function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Return to the page the user originally wanted (e.g. an invite link).
+  const fromState = (location.state as { from?: string } | null)?.from;
+  const redirectTo =
+    fromState && fromState.startsWith("/") && !fromState.startsWith("//")
+      ? fromState
+      : "/dashboard";
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -29,7 +36,7 @@ function Register() {
         password,
       });
 
-      navigate("/dashboard", { replace: true });
+      navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(
         err instanceof Error
@@ -137,7 +144,7 @@ function Register() {
 
           <p className="auth-switch">
             Already have an account?{" "}
-            <Link to="/login">Log in</Link>
+            <Link to="/login" state={location.state}>Log in</Link>
           </p>
 
           <p className="auth-bottom-note">

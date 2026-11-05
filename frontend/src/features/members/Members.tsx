@@ -12,6 +12,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { useWorkspace } from "../../context/WorkspaceContext";
 import { useMembers } from "../../hooks/useMembers";
+import InvitePanel from "./InvitePanel";
 
 import "./Members.css";
 
@@ -86,18 +87,20 @@ function Members() {
         </div>
       </div>
 
+      {canManage && <InvitePanel workspaceId={workspaceId} />}
+
       {canManage && (
         <form className="member-add-form" onSubmit={handleAdd}>
           <input
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            placeholder="Add a member by email"
+            placeholder="Add an existing user by email"
             aria-label="Member email"
             required
           />
           <Button type="submit" disabled={addMutation.isPending}>
-            {addMutation.isPending ? "Adding..." : "Add member"}
+            {addMutation.isPending ? "Adding..." : "Add existing user"}
           </Button>
         </form>
       )}

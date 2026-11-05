@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import Button from "../../components/ui/Button";
 import "./Auth.css";
@@ -8,6 +8,13 @@ import "./Auth.css";
 function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Return to the page the user originally wanted (e.g. an invite link).
+  const fromState = (location.state as { from?: string } | null)?.from;
+  const redirectTo =
+    fromState && fromState.startsWith("/") && !fromState.startsWith("//")
+      ? fromState
+      : "/dashboard";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,7 +30,7 @@ function Login() {
 
     try {
       await login({ email, password });
-      navigate("/dashboard", { replace: true });
+      navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(
         err instanceof Error
@@ -117,7 +124,7 @@ function Login() {
 
           <p className="auth-switch">
             Don't have an account?{" "}
-            <Link to="/register">Create an account</Link>
+            <Link to="/register" state={location.state}>Create an account</Link>
           </p>
 
           <p className="auth-bottom-note">

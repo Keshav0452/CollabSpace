@@ -47,7 +47,7 @@ function labelPriority(value: unknown): string {
 function TaskDetail({ task, onClose }: TaskDetailProps) {
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
-  const { getMemberName } = useMembers();
+  const { getMemberName, getMemberNames } = useMembers();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
@@ -113,6 +113,15 @@ function TaskDetail({ task, onClose }: TaskDetailProps) {
     }
   }
 
+  // Older activity entries stored a single id (or null) instead of a list.
+  function toIdList(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value as string[];
+    }
+
+    return typeof value === "string" ? [value] : [];
+  }
+
   function describeActivity(item: TaskActivity): string {
     const actor = item.actorId ? getMemberName(item.actorId) : "Someone";
     const { details } = item;
@@ -133,9 +142,9 @@ function TaskDetail({ task, onClose }: TaskDetailProps) {
           details.oldValue,
         )} to ${labelPriority(details.newValue)}`;
       case "assignee_changed":
-        return `${actor} changed the assignee from ${getMemberName(
-          (details.oldValue as string | null) ?? null,
-        )} to ${getMemberName((details.newValue as string | null) ?? null)}`;
+        return `${actor} changed the assignees from ${getMemberNames(
+          toIdList(details.oldValue),
+        )} to ${getMemberNames(toIdList(details.newValue))}`;
       case "due_date_changed":
         return `${actor} changed the due date to ${
           details.newValue ? String(details.newValue).slice(0, 10) : "none"
@@ -187,8 +196,8 @@ function TaskDetail({ task, onClose }: TaskDetailProps) {
 
         <dl className="task-detail-meta">
           <div>
-            <dt>Assignee</dt>
-            <dd>{getMemberName(task.assignedTo)}</dd>
+            <dt>Assignees</dt>
+            <dd>{getMemberNames(task.assigneeIds)}</dd>
           </div>
           <div>
             <dt>Created by</dt>
