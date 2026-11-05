@@ -1,31 +1,55 @@
+import { createHash } from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
+import { redisClient } from "../config/redis.js";
 
-type Entry = { count: number; resetAt: number };
+const INCREMENT_AND_SET_TTL = `
+  local current = redis.call('INCR', KEYS[1])
+  if current == 1 then
+    redis.call('PEXPIRE', KEYS[1], ARGV[1])
+  end
+  local ttl = redis.call('PTTL', KEYS[1])
+  return { current, ttl }
+`;
 
-/** A small single-process limiter for sensitive authentication endpoints.
- * For multi-instance deployments, replace the in-memory store with Redis. */
-export function rateLimit(options: { windowMs: number; max: number; message?: string }) {
-  const entries = new Map<string, Entry>();
-  return (req: Request, res: Response, next: NextFunction): void => {
-    const now = Date.now();
-    const key = req.ip ?? req.socket.remoteAddress ?? "unknown";
-    let entry = entries.get(key);
-    if (!entry || entry.resetAt <= now) {
-      entry = { count: 0, resetAt: now + options.windowMs };
-      entries.set(key, entry);
-    }
-    entry.count += 1;
-    if (entry.count > options.max) {
-      res.setHeader("Retry-After", String(Math.ceil((entry.resetAt - now) / 1000)));
-      res.status(429).json({ status: "error", message: options.message ?? "Too many requests. Please try again later." });
-      return;
-    }
-    // Opportunistically remove expired keys to keep memory bounded.
-    if (entries.size > 1000) {
-      for (const [storedKey, storedEntry] of entries) {
-        if (storedEntry.resetAt <= now) entries.delete(storedKey);
+/**
+ * Shared Redis-backed fixed-window limiter. Since Redis is a required runtime
+ * dependency for this application, fail closed if the limiter cannot run.
+ */
+export function rateLimit(options: {
+  windowMs: number;
+  max: number;
+  scope?: string;
+  message?: string;
+}) {
+  const scope = options.scope ?? "default";
+
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+      const ipHash = createHash("sha256").update(ip).digest("hex");
+      const key = `collabspace:rate-limit:${scope}:${ipHash}`;
+      const result = await redisClient.eval(INCREMENT_AND_SET_TTL, {
+        keys: [key],
+        arguments: [String(options.windowMs)],
+      }) as [number, number];
+      const [count, ttl] = result;
+
+      if (count > options.max) {
+        res.setHeader("Retry-After", String(Math.max(1, Math.ceil(ttl / 1000))));
+        res.status(429).json({
+          status: "error",
+          message: options.message ?? "Too many requests. Please try again later.",
+        });
+        return;
       }
+
+      next();
+    } catch (error) {
+      console.error("Rate limiter unavailable:", error);
+      res.status(503).json({
+        status: "error",
+        message: "Authentication service is temporarily unavailable. Please try again.",
+      });
     }
-    next();
   };
 }

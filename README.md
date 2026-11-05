@@ -10,7 +10,8 @@ CollabSpace is a collaborative workspace and task-management application built w
 - Task creation, editing, deletion, status/priority, assignment, due dates, project association, search, filtering, and pagination
 - Task comments and activity history
 - Notifications with read/unread actions and task deep links
-- Redis Pub/Sub, WebSocket updates, and PostgreSQL Outbox processing
+- Redis Pub/Sub, Redis-backed authentication rate limiting, WebSocket updates, and PostgreSQL Outbox processing
+- Short-lived JWT access tokens with account-level token-version revocation after password changes
 - Docker Compose setup for PostgreSQL, Redis, backend, and frontend
 
 ## Run locally
@@ -98,12 +99,25 @@ For an existing local database, back up your database first, then run `npm run m
 
 ## Important production notes
 
-- The current access token is stored in browser local storage. Before a public production launch, replace this with a reviewed short-lived access-token and secure HttpOnly refresh-cookie session design.
-- Email changes currently take effect immediately; a public production launch should require verification of the new address. A self-service password-reset/email-delivery flow is not included because it requires a configured email provider.
-- The included authentication rate limiter is in-memory and protects a single backend process. Use a shared Redis-backed limiter when running multiple backend replicas.
-- Password changes do not yet revoke other already-issued access tokens; those tokens remain valid until their short expiry (15 minutes).
+- Access tokens are short-lived (15 minutes) and are stored in browser local storage. This is more exposed to cross-site scripting than an HttpOnly cookie session. Before onboarding the public, consider moving to a reviewed secure HttpOnly refresh-cookie/session design and perform a security review of the frontend's XSS surface.
+- Authentication endpoints use a shared Redis-backed rate limiter. If Redis is unavailable, those endpoints fail closed with HTTP 503 rather than silently disabling the limit.
+- Password changes increment the account's `token_version`; existing access tokens are rejected on the next API or WebSocket authentication check. This migration is applied automatically by the Docker startup migration command.
+- Email changes currently take effect immediately. Email verification and self-service password reset/email delivery are not implemented because they require a configured and verified email-delivery provider. Do not represent email addresses as verified until that workflow is added.
+- Use HTTPS at the public edge, rotate all secrets, restrict database/network access, configure automated backups and restore drills, and monitor application logs/errors before onboarding real users.
+- The Docker Compose file is a self-hosting starting point, not a complete managed-cloud deployment or disaster-recovery plan. Configure a reverse proxy/TLS certificate and persistent storage appropriate to your host.
 - Put the application behind HTTPS, rotate all secrets, restrict database/network access, configure backups, and monitor application logs/errors before onboarding real users.
 - The Docker Compose file is a self-hosting starting point, not a complete managed-cloud deployment or disaster-recovery plan.
+
+## Security and migration update
+
+The migration `1793171000000_add-user-token-version.sql` adds `users.token_version`. It defaults existing accounts to version `0`; newly issued tokens include the current version. Password changes increment the version and revoke all existing tokens for that account. Apply migrations before running a manually started backend:
+
+```bash
+cd backend
+npm run migrate:up
+```
+
+The frontend Nginx configuration sets baseline browser security headers and a same-origin Content Security Policy. Review the policy if you add external scripts, fonts, image hosts, or API domains.
 
 ## Build checks
 

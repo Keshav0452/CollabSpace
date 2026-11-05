@@ -1,6 +1,6 @@
 
 import { describe, expect, it } from "vitest";
-import { registerSchema } from "../src/modules/auth/auth.validation.js";
+import { registerSchema, loginSchema, changePasswordSchema } from "../src/modules/auth/auth.validation.js";
 
 describe("registerSchema", () => {
   it("accepts valid registration data", () => {
@@ -56,5 +56,23 @@ describe("registerSchema", () => {
       expect(result.data.name).toBe("Keshav");
       expect(result.data.email).toBe("keshav@example.com");
     }
+  });
+});
+
+describe("loginSchema", () => {
+  it("accepts valid login data", () => {
+    expect(loginSchema.safeParse({ email: "person@example.com", password: "password123" }).success).toBe(true);
+  });
+
+  it("rejects malformed email addresses", () => {
+    expect(loginSchema.safeParse({ email: "invalid", password: "password123" }).success).toBe(false);
+  });
+});
+
+describe("changePasswordSchema", () => {
+  it("requires a different new password with sufficient length", () => {
+    expect(changePasswordSchema.safeParse({ currentPassword: "old-password", newPassword: "new-password" }).success).toBe(true);
+    expect(changePasswordSchema.safeParse({ currentPassword: "same-password", newPassword: "same-password" }).success).toBe(false);
+    expect(changePasswordSchema.safeParse({ currentPassword: "old-password", newPassword: "short" }).success).toBe(false);
   });
 });

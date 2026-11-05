@@ -21,7 +21,7 @@ export async function registerUser(input: RegisterUserInput,): Promise<Registere
       email: input.email.trim().toLowerCase(),
       passwordHash,
     });
-    const accessToken = await createAccessToken(user.id);
+    const accessToken = await createAccessToken(user.id, 0);
 
     return { ...user, accessToken };
   } catch (error: unknown) {
@@ -68,7 +68,7 @@ export async function loginUser(
     throw new AppError(401, "Invalid email or password");
   }
 
-  const accessToken = await createAccessToken(user.id);
+  const accessToken = await createAccessToken(user.id, user.tokenVersion);
 
   return {
     id: user.id,

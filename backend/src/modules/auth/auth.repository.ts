@@ -36,6 +36,7 @@ export interface LoginUserRecord {
   name: string;
   email: string;
   passwordHash: string;
+  tokenVersion: number;
 }
 
 export async function findUserByEmail(
@@ -47,7 +48,8 @@ export async function findUserByEmail(
         id,
         name,
         email,
-        password_hash AS "passwordHash"
+        password_hash AS "passwordHash",
+        token_version AS "tokenVersion"
       FROM public.users
       WHERE email = $1
       LIMIT 1
@@ -76,5 +78,5 @@ export async function updateUserProfile(userId: string, name: string, email: str
 }
 
 export async function updateUserPasswordHash(userId: string, passwordHash: string): Promise<void> {
-  await pool.query(`UPDATE public.users SET password_hash = $1 WHERE id = $2`, [passwordHash, userId]);
+  await pool.query(`UPDATE public.users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2`, [passwordHash, userId]);
 }
