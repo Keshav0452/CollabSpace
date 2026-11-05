@@ -1,0 +1,63 @@
+.member-add-form {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.member-add-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+}
+
+.members-card {
+  padding: 8px 20px;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.members-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.members-table th {
+  text-align: left;
+  padding: 12px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.members-table td {
+  padding: 12px 8px;
+  border-top: 1px solid var(--border);
+}
+
+.members-table td:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.role-badge {
+  display: inline-block;
+  padding: 4px 9px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+  background: var(--surface-secondary);
+  color: var(--text-secondary);
+}
+
+.role-owner {
+  background: #efedff;
+  color: var(--primary);
+}

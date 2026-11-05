@@ -11,6 +11,7 @@ export type TaskPriority = "low" | "medium" | "high";
 export interface TaskRecord {
   id: string;
   workspaceId: string;
+  projectId: string | null;
   title: string;
   description: string | null;
   status: TaskStatus;
@@ -33,6 +34,7 @@ export interface PaginatedTasks {
 const taskColumns = `
   id,
   workspace_id AS "workspaceId",
+  project_id AS "projectId",
   title,
   description,
   status,
@@ -57,6 +59,7 @@ export async function createTask(
     const taskResult = await client.query<TaskRecord>(
       `INSERT INTO public.tasks (
          workspace_id,
+         project_id,
          title,
          description,
          priority,
@@ -64,10 +67,11 @@ export async function createTask(
          created_by,
          due_date
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING ${taskColumns}`,
       [
         workspaceId,
+        input.projectId ?? null,
         input.title,
         input.description ?? null,
         input.priority ?? "medium",
@@ -98,6 +102,36 @@ export async function createTask(
         }),
       ],
     );
+
+    if (task.assignedTo && task.assignedTo !== createdBy) {
+      await client.query(
+        `INSERT INTO public.notifications (
+           recipient_id, actor_id, type, task_id, message
+         ) VALUES ($1, $2, $3, $4, $5)`,
+        [
+          task.assignedTo,
+          createdBy,
+          "task_assigned",
+          task.id,
+          `You have been assigned the task "${task.title}".`,
+        ],
+      );
+
+      await client.query(
+        `INSERT INTO public.outbox_events (event_type, payload)
+         VALUES ($1, $2::jsonb)`,
+        [
+          "task.assigned",
+          JSON.stringify({
+            taskId: task.id,
+            workspaceId,
+            recipientId: task.assignedTo,
+            actorId: createdBy,
+            notificationType: "task_assigned",
+          }),
+        ],
+      );
+    }
 
     await client.query("COMMIT");
 
@@ -133,6 +167,16 @@ export async function listTasks(
   if (filters.assignedTo !== undefined) {
     values.push(filters.assignedTo);
     conditions.push(`assigned_to = $${values.length}`);
+  }
+
+  if (filters.projectId !== undefined) {
+    values.push(filters.projectId);
+    conditions.push(`project_id = $${values.length}`);
+  }
+
+  if (filters.search) {
+    values.push(`%${filters.search}%`);
+    conditions.push(`(title ILIKE $${values.length} OR COALESCE(description, '') ILIKE $${values.length})`);
   }
 
   const whereClause = conditions.join(" AND ");
@@ -218,6 +262,7 @@ export async function updateTask(
       status: "status",
       priority: "priority",
       assignedTo: "assigned_to",
+      projectId: "project_id",
       dueDate: "due_date",
     };
 
@@ -258,6 +303,7 @@ export async function updateTask(
       ["priority", "priority_changed"],
       ["assignedTo", "assignee_changed"],
       ["dueDate", "due_date_changed"],
+      ["projectId", "project_changed"],
     ] as const;
 
     for (const [field, action] of activityMap) {

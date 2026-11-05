@@ -57,3 +57,24 @@ export async function findUserByEmail(
 
   return result.rows[0] ?? null;
 }
+
+export async function findUserById(userId: string) {
+  const result = await pool.query<{ id: string; name: string; email: string }>(
+    `SELECT id, name, email FROM public.users WHERE id = $1 LIMIT 1`,
+    [userId],
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function updateUserProfile(userId: string, name: string, email: string) {
+  const result = await pool.query<{ id: string; name: string; email: string }>(
+    `UPDATE public.users SET name = $1, email = $2 WHERE id = $3
+     RETURNING id, name, email`,
+    [name, email, userId],
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function updateUserPasswordHash(userId: string, passwordHash: string): Promise<void> {
+  await pool.query(`UPDATE public.users SET password_hash = $1 WHERE id = $2`, [passwordHash, userId]);
+}

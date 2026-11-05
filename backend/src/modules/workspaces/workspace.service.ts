@@ -49,7 +49,7 @@ export async function addMemberToWorkspace( workspaceId: string, requesterId: st
     throw new AppError(403, "You do not have permission to add members");
   }
 
-  const user = await findUserByEmail(input.email);
+  const user = await findUserByEmail(input.email.trim().toLowerCase());
 
   if (!user) {
     throw new AppError(404, "No registered user found with this email");
@@ -111,6 +111,10 @@ export async function removeMemberFromWorkspace(
 
   if (target.role === "owner") {
     throw new AppError(403, "The workspace owner cannot be removed");
+  }
+
+  if (workspace.role === "admin" && target.role !== "member") {
+    throw new AppError(403, "Admins can only remove workspace members, not other admins");
   }
 
   const removed = await deleteWorkspaceMember(workspaceId, input.userId);

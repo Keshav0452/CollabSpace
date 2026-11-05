@@ -4,7 +4,7 @@ import {createTask as createTaskRecord,deleteTask as deleteTaskRecord,findTaskBy
 import type { TaskRecord } from "./task.repository.js";
 import type {CreateTaskInput,UpdateTaskInput,ListTasksQuery} from "./task.validation.js";
 import { listTaskActivity } from "./task-activity.repository.js";
-import { createUserNotification } from "../notifications/notification.service.js";
+import { findProject } from "../projects/project.repository.js";
 
 async function requireWorkspaceMembership(workspaceId: string,userId: string,): Promise<void> {
   const workspace = await findWorkspaceForUser(workspaceId, userId);
@@ -33,6 +33,10 @@ export async function createTask(workspaceId: string,userId: string,input: Creat
   await requireWorkspaceMembership(workspaceId, userId);
 
   await requireWorkspaceAssignee(workspaceId, input.assignedTo);
+  if (input.projectId) {
+    const project = await findProject(workspaceId, input.projectId);
+    if (!project || project.status !== "active") throw new AppError(400, "Select an active project in this workspace");
+  }
 
   return createTaskRecord(workspaceId, userId, input);
 }
@@ -76,6 +80,10 @@ export async function updateTask(
 
   if (input.assignedTo !== undefined) {
     await requireWorkspaceAssignee(workspaceId, input.assignedTo);
+  }
+  if (input.projectId && input.projectId !== existingTask.projectId) {
+    const project = await findProject(workspaceId, input.projectId);
+    if (!project || project.status !== "active") throw new AppError(400, "Select an active project in this workspace");
   }
 
   const updatedTask = await updateTaskRecord(

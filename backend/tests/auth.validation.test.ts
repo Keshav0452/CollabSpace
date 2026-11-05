@@ -23,11 +23,11 @@ describe("registerSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects a password shorter than 12 characters", () => {
+  it("rejects a password shorter than 8 characters", () => {
     const result = registerSchema.safeParse({
       name: "Keshav",
       email: "keshav@example.com",
-      password: "123",
+      password: "1234567",
     });
 
     expect(result.success).toBe(false);

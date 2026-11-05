@@ -1,0 +1,32 @@
+.settings-card {
+  max-width: 600px;
+  margin-bottom: 20px;
+  padding: 20px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.settings-card h2 {
+  margin: 0 0 14px;
+  font-size: 17px;
+}
+
+.settings-card label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.settings-card p {
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.settings-card .member-add-form {
+  margin-bottom: 8px;
+}
+
+.settings-form{display:grid;gap:9px}.settings-form input{width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text-primary);font:inherit;margin-bottom:7px}.settings-form button{justify-self:start;margin-top:5px}.settings-card{margin-bottom:20px}

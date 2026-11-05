@@ -9,6 +9,7 @@ export interface RegisteredUser {
   name: string;
   email: string;
   createdAt: Date;
+  accessToken: string;
 }
 
 export async function registerUser(input: RegisterUserInput,): Promise<RegisteredUser> {
@@ -17,11 +18,12 @@ export async function registerUser(input: RegisterUserInput,): Promise<Registere
   try {
     const user = await createUser({
       name: input.name,
-      email: input.email,
+      email: input.email.trim().toLowerCase(),
       passwordHash,
     });
+    const accessToken = await createAccessToken(user.id);
 
-    return user;
+    return { ...user, accessToken };
   } catch (error: unknown) {
     if (
       typeof error === "object" &&
@@ -51,7 +53,7 @@ export interface AuthenticatedUser {
 export async function loginUser(
   input: LoginUserInput,
 ): Promise<AuthenticatedUser & { accessToken: string }> {
-  const user = await findUserByEmail(input.email);
+  const user = await findUserByEmail(input.email.trim().toLowerCase());
 
   if (!user) {
     throw new AppError(401, "Invalid email or password");

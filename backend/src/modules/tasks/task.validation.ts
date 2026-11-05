@@ -15,6 +15,8 @@ export const createTaskSchema = z.object({
 
   priority: z.enum(["low", "medium", "high"]).optional(),
 
+  projectId: z.string().uuid("A valid project ID is required").nullable().optional(),
+
   assignedTo: z
     .string()
     .uuid("A valid assignee ID is required")
@@ -53,6 +55,8 @@ export const updateTaskSchema = z
     priority: z
       .enum(["low", "medium", "high"])
       .optional(),
+
+    projectId: z.string().uuid("A valid project ID is required").nullable().optional(),
 
     assignedTo: z
       .string()
@@ -101,6 +105,9 @@ export const listTasksQuerySchema = z.object({
     .string()
     .uuid("A valid assignee ID is required")
     .optional(),
+
+  projectId: z.string().uuid("A valid project ID is required").optional(),
+  search: z.string().trim().max(200).optional(),
 });
 
 export type ListTasksQuery = z.infer<typeof listTasksQuerySchema>;
