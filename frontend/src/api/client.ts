@@ -55,6 +55,13 @@ export async function apiRequest<T>(
     headers,
   });
 
+  // The API renews the token for active users; keep the newest one.
+  const renewedToken = response.headers.get("X-Access-Token");
+
+  if (renewedToken) {
+    setAccessToken(renewedToken);
+  }
+
   // Handle responses that don't contain a body.
   if (response.status === 204) {
     return undefined as T;

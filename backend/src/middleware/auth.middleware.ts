@@ -1,5 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
-import { verifyAccessToken } from "../utils/token.js";
+import {
+    ACCESS_TOKEN_TTL_SECONDS,
+    createAccessToken,
+    verifyAccessToken,
+} from "../utils/token.js";
 
 declare global {
     namespace Express {
@@ -33,9 +37,16 @@ export async function authenticate( req: Request, res: Response, next: NextFunct
             return;
         }
 
-        const { userId } = await verifyAccessToken(token);
+        const { userId, tokenVersion, expiresAt } = await verifyAccessToken(token);
 
         req.user = { id: userId };
+
+        // Sliding session: once half the lifetime is gone, send a fresh token.
+        const secondsLeft = expiresAt - Math.floor(Date.now() / 1000);
+
+        if (secondsLeft < ACCESS_TOKEN_TTL_SECONDS / 2) {
+            res.setHeader("X-Access-Token", await createAccessToken(userId, tokenVersion));
+        }
 
         next();
     } catch {

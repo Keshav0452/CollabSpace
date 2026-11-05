@@ -9,7 +9,17 @@ if (!jwtSecret || jwtSecret.length < 32) {
 
 const secret = new TextEncoder().encode(jwtSecret);
 const JWT_ISSUER = "collabspace-api";
-const ACCESS_TOKEN_LIFETIME = "15m";
+// Tokens last ACCESS_TOKEN_TTL_HOURS (default 24). While a user stays active,
+// the API hands out a fresh token once half of the lifetime has passed, so
+// active users are never logged out mid-session. A password change still
+// revokes every older token immediately (see the token_version check below).
+const ttlHours = Number(process.env.ACCESS_TOKEN_TTL_HOURS ?? 24);
+
+if (!Number.isFinite(ttlHours) || ttlHours <= 0) {
+  throw new Error("ACCESS_TOKEN_TTL_HOURS must be a positive number");
+}
+
+export const ACCESS_TOKEN_TTL_SECONDS = Math.round(ttlHours * 3600);
 
 export async function createAccessToken(
   userId: string,
@@ -20,14 +30,14 @@ export async function createAccessToken(
     .setSubject(userId)
     .setIssuer(JWT_ISSUER)
     .setIssuedAt()
-    .setExpirationTime(ACCESS_TOKEN_LIFETIME)
+    .setExpirationTime(`${ACCESS_TOKEN_TTL_SECONDS}s`)
     .sign(secret);
 }
 
 /** Verify signature, issuer, expiry, subject and current account token version. */
 export async function verifyAccessToken(
   token: string,
-): Promise<{ userId: string }> {
+): Promise<{ userId: string; tokenVersion: number; expiresAt: number }> {
   const { payload } = await jwtVerify(token, secret, {
     algorithms: ["HS256"],
     issuer: JWT_ISSUER,
@@ -52,5 +62,9 @@ export async function verifyAccessToken(
     throw new Error("Access token has been revoked");
   }
 
-  return { userId: payload.sub };
+  return {
+    userId: payload.sub,
+    tokenVersion: payload.ver,
+    expiresAt: typeof payload.exp === "number" ? payload.exp : 0,
+  };
 }

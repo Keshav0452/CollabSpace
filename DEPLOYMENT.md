@@ -1,73 +1,141 @@
-# CollabSpace deployment handoff
+# Deploying CollabSpace
 
-This repository is packaged for a Docker Compose self-hosted deployment. The deployment host must have Docker Engine and the Docker Compose plugin installed, plus a domain/reverse proxy and TLS certificate if it will be exposed publicly.
+This guide takes the app from your laptop to a public URL using Docker Compose on a
+single server (any VPS with Docker). Work through it top to bottom.
 
-## 1. Prepare secrets on the deployment host
+## 1. Before you start
 
-From the repository root:
+- A server with Docker and Docker Compose, and a domain name pointing at it.
+- The full test suite passes locally:
+  ```bash
+  cd backend  && npm run typecheck && npm test && npm run test:e2e
+  cd frontend && npm run build
+  ```
+  (`npm run test:e2e` needs your local PostgreSQL and Redis. It refuses to run against a remote database.)
+
+## 2. Configure secrets
 
 ```bash
 cp .env.example .env
-openssl rand -base64 48
-openssl rand -base64 48
+openssl rand -base64 48    # use one value for JWT_SECRET
+openssl rand -base64 24    # use another for DB_PASSWORD
 ```
 
-Use the first generated value for `DB_PASSWORD` and the second for `JWT_SECRET` in `.env`. Keep `.env` private and never commit or upload it. Use a unique secret pair for each environment. The JWT secret must be at least 32 characters.
+Edit `.env`: set `DB_PASSWORD`, `JWT_SECRET` and `TRUST_PROXY` (see section 4). Never commit `.env`
+and never reuse the values from your development machine.
 
-## 2. Start the application
+## 3. Start the stack
 
 ```bash
 docker compose up --build -d
-docker compose ps
-docker compose logs -f backend frontend
+docker compose ps                # backend should become "healthy"
+docker compose logs -f backend   # migrations run automatically on start
+curl --fail http://127.0.0.1:8080/api/health/ready
 ```
 
-The backend container waits for PostgreSQL and Redis health checks, applies pending SQL migrations, and then starts the API and WebSocket server. PostgreSQL and Redis data are stored in named Docker volumes.
+The backend container waits for PostgreSQL and Redis, applies pending SQL migrations, and then starts the
+API and WebSocket server. PostgreSQL and Redis data live in named Docker volumes.
 
-The application is exposed on port `8080` by default. Set `APP_PORT` in `.env` if a different host port is required.
+The app listens on `APP_PORT` (default 8080). PostgreSQL and Redis are **not** published to the
+internet; keep it that way. Allow only ports 80 and 443 (and SSH) in the server firewall, and
+block 8080 from the outside once step 4 is done.
 
-## 3. Verify the deployment
+## 4. HTTPS (required)
 
-```bash
-curl --fail http://127.0.0.1:8080/api/health
+Passwords and login tokens travel over the connection, so serve the app over HTTPS only.
+The simplest option is Caddy, which obtains and renews certificates automatically:
+
+```
+# /etc/caddy/Caddyfile
+app.example.com {
+    reverse_proxy 127.0.0.1:8080
+    header Strict-Transport-Security "max-age=31536000"
+}
 ```
 
-Then open `http://SERVER-IP:8080` and test the main user journey:
+Caddy proxies WebSockets (live updates) without extra settings. Hosting platforms and CDNs
+(Cloudflare, Render, Fly.io and similar) do the same job.
 
-1. Register a new account and sign in.
-2. Create a workspace.
-3. Add a workspace member (the invited account must already exist).
-4. Create a project and create tasks inside it.
-5. Assign a task, update its status, add a comment, and verify notifications.
-6. Sign in as a second workspace member in another browser and verify realtime updates.
-7. Change the first account's password and verify the old session is rejected; sign in again with the new password.
+**Set `TRUST_PROXY` to match your setup.** It tells the backend how many proxies sit in front of it,
+so rate limits are applied per real visitor and not to the proxy's address:
 
-## 4. Put HTTPS in front of the app
+| Setup | `TRUST_PROXY` |
+|---|---|
+| Only the bundled nginx in front of the backend | `1` |
+| HTTPS proxy / CDN in front of the bundled nginx (the setup above) | `2` |
 
-For a public deployment, terminate TLS at a trusted reverse proxy or managed load balancer and forward HTTP traffic to the Compose frontend port. Configure WebSocket upgrade forwarding for `/ws`. Do not expose PostgreSQL (5432) or Redis (6379) to the public internet. Restrict host firewall rules so only the reverse proxy can reach the app port.
+If this is wrong, either every visitor shares one rate-limit bucket (and a few failed logins lock
+everyone out) or the limits can be bypassed by spoofing headers.
 
-## 5. Operations
+## 5. Backups (do this before real users arrive)
 
 ```bash
-# Follow logs
-docker compose logs -f
+# Backup
+docker compose exec -T postgres pg_dump -U collabspace_app collabspace | gzip > backup-$(date +%F).sql.gz
 
-# Restart services
-docker compose restart
+# Restore into an empty database
+gunzip -c backup-YYYY-MM-DD.sql.gz | docker compose exec -T postgres psql -U collabspace_app collabspace
+```
 
-# Stop services but preserve data
-docker compose down
+Schedule the backup daily (cron), copy the files off the server, and **test a restore once**. Take a
+manual backup before every deploy that includes a new migration.
 
-# Update after pulling a new release
+## 6. Monitoring
+
+- Point a free uptime monitor (UptimeRobot, Better Stack, ...) at `https://app.example.com/api/health/ready`.
+  It returns 200 only when PostgreSQL and Redis both answer, and 503 otherwise.
+- Check `docker compose logs backend` after each deploy.
+
+## 7. Smoke test after every deploy
+
+Use a private window, not your normal browser:
+1. Register a new account and create a workspace.
+2. Create a task and assign it to yourself.
+3. Create an invite link, open it in a second private window with another account, join, and
+   confirm the live notification arrives without refreshing.
+4. Log out and log back in.
+
+## Day-to-day operations
+
+```bash
+docker compose logs -f           # follow logs
+docker compose restart           # restart services
+docker compose down              # stop, KEEPING the data
+docker compose down -v           # stop and DELETE the database and Redis volumes (destructive!)
+```
+
+## What happens to logins
+
+A login lasts 24 hours (`ACCESS_TOKEN_TTL_HOURS`) and renews automatically while the person keeps
+using the app. Changing a password signs out every other session immediately.
+
+## Known limitations
+
+These are not blockers for a small launch, but tell your users or plan for them:
+
+- **No password reset or email verification.** There is no email service, so a user who forgets
+  their password cannot recover the account, and addresses are not verified. Adding this needs an
+  email provider (for example Resend) and is the main thing to build before a wide public launch.
+  Until then, do not onboard real users who you cannot help manually (for example by resetting a
+  password directly in the database).
+- **Invites are shared by hand.** Owners copy the invite link and send it themselves.
+- **Login token is kept in the browser's local storage.** The app sets a strict Content Security
+  Policy to limit cross-site scripting; keep dependencies updated (CI runs `npm audit`).
+- **Email changes take effect immediately** (no confirmation step).
+- **No managed infrastructure.** This Compose setup has no managed database backups, high availability,
+  centralised logging or disaster-recovery service. Section 5 (backups) is your responsibility.
+- **Sessions are not cookie-based.** A hardened public deployment could move to an HttpOnly refresh-cookie
+  session and get a frontend XSS review.
+- **Single server.** Compose runs one backend; the realtime pieces already use Redis, so scaling
+  out later is possible but untested.
+
+## Updating
+
+```bash
+git pull
+docker compose exec -T postgres pg_dump ... > backup-before-update.sql   # see section 5
 docker compose up --build -d
 ```
 
-Back up PostgreSQL regularly and test restoring a backup before relying on the service. The named volumes survive `docker compose down`; `docker compose down -v` deletes the database and Redis volumes and is destructive.
-
-## Current product limitations to review before a public launch
-
-- Access tokens are short-lived but are stored in browser local storage. A hardened public deployment should consider a secure HttpOnly refresh-cookie/session architecture and a frontend XSS review.
-- Email verification and self-service password reset are not implemented. Email changes currently take effect immediately.
-- This Compose setup is a self-hosted deployment baseline. It does not provide managed database backups, multi-region availability, centralized observability, or a disaster-recovery service by itself.
-
-Do not onboard real users until you have configured HTTPS, rotated secrets, restricted network access, established backups, and reviewed these limitations.
+> Do not onboard real users until HTTPS is on, secrets are rotated, network access is restricted,
+> backups exist (and a restore has been tested), and you have read the limitations above.

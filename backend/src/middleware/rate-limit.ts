@@ -48,7 +48,7 @@ export function rateLimit(options: {
       console.error("Rate limiter unavailable:", error);
       res.status(503).json({
         status: "error",
-        message: "Authentication service is temporarily unavailable. Please try again.",
+        message: "Service temporarily unavailable. Please try again.",
       });
     }
   };

@@ -3,6 +3,7 @@ import express from "express";
 import healthRouter from "./routes/health.routes.js";
 import authRouter from "./modules/auth/auth.routes.js";
 import { errorHandler } from "./middleware/error-handler.js";
+import { rateLimit } from "./middleware/rate-limit.js";
 import protectedRouter from "./routes/protected.routes.js";
 import workspaceRouter from "./modules/workspaces/workspace.routes.js";
 import taskRouter from "./modules/tasks/task.routes.js";
@@ -13,7 +14,18 @@ import { inviteRouter, workspaceInviteRouter } from "./modules/invites/invite.ro
 const app = express();
 
 app.disable("x-powered-by");
-app.set("trust proxy", process.env.TRUST_PROXY === "true" ? 1 : false);
+// How many reverse proxies sit in front of this server. This decides which
+// address Express treats as the client's (req.ip), which the rate limiters use.
+//   TRUST_PROXY=false or unset -> none (local development)
+//   TRUST_PROXY=true           -> 1 proxy (e.g. only the bundled nginx)
+//   TRUST_PROXY=2              -> 2 proxies (e.g. HTTPS proxy/CDN in front of nginx)
+function parseTrustProxy(value: string | undefined): number | false {
+  if (value === "true") return 1;
+  const hops = Number(value);
+  return Number.isInteger(hops) && hops > 0 ? hops : false;
+}
+
+app.set("trust proxy", parseTrustProxy(process.env.TRUST_PROXY));
 app.use((_req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -25,6 +37,14 @@ app.use((_req, res, next) => {
 app.use(express.json({ limit: "1mb" }));
 
 app.use("/api/health", healthRouter);
+
+// Generous per-IP ceiling for the whole API; login/register and invite tokens
+// have their own, much stricter limits.
+app.use("/api", rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.API_RATE_LIMIT_PER_MINUTE ?? 600),
+  scope: "api",
+}));
 app.use("/api/auth", authRouter);
 app.use("/api/protected", protectedRouter);
 app.use("/api/workspaces", workspaceRouter);
