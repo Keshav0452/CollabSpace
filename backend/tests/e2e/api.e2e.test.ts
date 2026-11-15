@@ -307,6 +307,13 @@ describe("notifications", () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect((await notificationsOf(dave)).some((n) => n.type === "task_assigned")).toBe(true);
     expect((await notificationsOf(alice)).some((n) => n.type === "task_assigned")).toBe(false);
+
+    // Bob was taken off the task by Carol; Carol was later taken off by Alice.
+    const bobNotes = await notificationsOf(people.bob);
+    expect(bobNotes.some((n) => n.type === "task_unassigned" && n.actorId === carol.id)).toBe(true);
+    expect((await notificationsOf(carol)).some((n) => n.type === "task_unassigned" && n.actorId === alice.id)).toBe(true);
+    expect((await notificationsOf(alice)).some((n) => n.type === "task_unassigned")).toBe(false);
+    expect((await notificationsOf(dave)).some((n) => n.type === "task_unassigned")).toBe(false);
     expect((await notificationsOf(alice)).some((n) => n.type === "task_commented")).toBe(true);
     expect((await notificationsOf(dave)).some((n) => n.type === "task_commented" && n.actorId === dave.id)).toBe(false);
 
@@ -335,7 +342,8 @@ describe("realtime", () => {
         const message = JSON.parse(raw.toString());
         if (message.type === "auth.success") {
           authenticated = true;
-          await api("post", `/workspaces/${workspaceId}/tasks`, people.alice.token, { title: "Live task", assigneeIds: [people.carol.id] });
+          const live = await api("post", `/workspaces/${workspaceId}/tasks`, people.alice.token, { title: "Live task", assigneeIds: [people.carol.id] });
+          ctx.liveTaskId = live.body.data.task.id;
         } else if (JSON.stringify(message).includes("task.assigned")) {
           clearTimeout(timer);
           socket.close();
@@ -346,6 +354,26 @@ describe("realtime", () => {
     });
     expect(outcome.authenticated).toBe(true);
     expect(outcome.event).toBe("task.assigned");
+  });
+
+  it("pushes a removal to the person taken off the task", async () => {
+    const event = await new Promise<string | undefined>((resolve) => {
+      const socket = new WebSocket(wsUrl);
+      const timer = setTimeout(() => { socket.close(); resolve(undefined); }, 15_000);
+      socket.on("open", () => socket.send(JSON.stringify({ type: "auth", accessToken: people.carol.token })));
+      socket.on("message", async (raw) => {
+        const message = JSON.parse(raw.toString());
+        if (message.type === "auth.success") {
+          await api("patch", `/workspaces/${workspaceId}/tasks/${ctx.liveTaskId}`, people.alice.token, { assigneeIds: [] });
+        } else if (JSON.stringify(message).includes("task.unassigned")) {
+          clearTimeout(timer);
+          socket.close();
+          resolve("task.unassigned");
+        }
+      });
+      socket.on("error", () => { clearTimeout(timer); resolve(undefined); });
+    });
+    expect(event).toBe("task.unassigned");
   });
 
   it("closes sockets that never authenticate or use a bad token", async () => {

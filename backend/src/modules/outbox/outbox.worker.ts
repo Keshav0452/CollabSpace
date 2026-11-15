@@ -16,6 +16,7 @@ let isStopping = false;
 async function dispatchOutboxEvent(event: OutboxEvent): Promise<void> {
   switch (event.eventType) {
     case "task.assigned":
+    case "task.unassigned":
     case "task.status_changed":
     case "task.commented": {
       await publishOutboxEvent(event);

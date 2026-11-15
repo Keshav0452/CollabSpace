@@ -10,6 +10,7 @@ const redisSubscriber = createClient({
 
 const ALLOWED_EVENT_TYPES = new Set([
   "task.assigned",
+  "task.unassigned",
   "task.status_changed",
   "task.commented",
 ]);

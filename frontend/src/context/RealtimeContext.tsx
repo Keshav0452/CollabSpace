@@ -7,6 +7,7 @@ import { useToast } from "./ToastContext";
 
 const EVENT_MESSAGES: Record<string, string> = {
   "task.assigned": "A task was assigned to you.",
+  "task.unassigned": "You were removed from a task.",
   "task.status_changed": "The status of one of your tasks changed.",
   "task.commented": "Someone commented on your task.",
 };

@@ -94,14 +94,20 @@ async function addAssignees(
   );
 }
 
-// Notify each recipient (never the actor) that a task was assigned to them.
-async function notifyAssigned(
+// Notify each recipient (never the actor) that they were added to, or removed from, a task.
+async function notifyAssignmentChange(
   client: Queryable,
+  kind: "assigned" | "unassigned",
   task: { id: string; title: string },
   workspaceId: string,
   actorId: string,
   recipientIds: string[],
 ): Promise<void> {
+  const message =
+    kind === "assigned"
+      ? `You have been assigned the task "${task.title}".`
+      : `You were removed from the task "${task.title}".`;
+
   for (const recipientId of recipientIds) {
     if (recipientId === actorId) {
       continue;
@@ -111,13 +117,7 @@ async function notifyAssigned(
       `INSERT INTO public.notifications (
          recipient_id, actor_id, type, task_id, message
        ) VALUES ($1, $2, $3, $4, $5)`,
-      [
-        recipientId,
-        actorId,
-        "task_assigned",
-        task.id,
-        `You have been assigned the task "${task.title}".`,
-      ],
+      [recipientId, actorId, `task_${kind}`, task.id, message],
     );
 
     // Save an outbox event in the same transaction.
@@ -125,13 +125,13 @@ async function notifyAssigned(
       `INSERT INTO public.outbox_events (event_type, payload)
        VALUES ($1, $2::jsonb)`,
       [
-        "task.assigned",
+        `task.${kind}`,
         JSON.stringify({
           taskId: task.id,
           workspaceId,
           recipientId,
           actorId,
-          notificationType: "task_assigned",
+          notificationType: `task_${kind}`,
         }),
       ],
     );
@@ -198,7 +198,7 @@ export async function createTask(
       ],
     );
 
-    await notifyAssigned(client, task, workspaceId, createdBy, assigneeIds);
+    await notifyAssignmentChange(client, "assigned", task, workspaceId, createdBy, assigneeIds);
 
     await client.query("COMMIT");
 
@@ -457,13 +457,22 @@ export async function updateTask(
       );
     }
 
-    // 4. Notify newly added assignees.
-    await notifyAssigned(
+    // 4. Notify newly added assignees, and people who were removed.
+    await notifyAssignmentChange(
       client,
+      "assigned",
       updatedTask,
       workspaceId,
       actorId,
       addedAssigneeIds,
+    );
+    await notifyAssignmentChange(
+      client,
+      "unassigned",
+      updatedTask,
+      workspaceId,
+      actorId,
+      removedAssigneeIds,
     );
 
     // 5. Notify the task creator and previous assignees when status changes.

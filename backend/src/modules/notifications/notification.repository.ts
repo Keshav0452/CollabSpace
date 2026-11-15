@@ -3,6 +3,7 @@ import type { ListNotificationsQuery } from "./notification.validation.js";
 
 export type NotificationType =
   | "task_assigned"
+  | "task_unassigned"
   | "task_status_changed"
   | "task_commented";
 

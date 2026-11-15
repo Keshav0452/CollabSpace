@@ -125,6 +125,7 @@ Switch to Alice → **Projects**:
 - [ ] Only workspace members appear in the list.
 - [ ] **Activity** on the task shows "changed the assignees from … to …".
 - [ ] **Notifications**: each *newly added* assignee gets a "task assigned" notification; you don't notify yourself.
+- [ ] **Removal**: untick someone and save → that person gets a "You were removed from the task" notification (live, in their bell). The person making the change is never notified about their own action.
 - [ ] **"Assigned to me"** filter shows tasks where you are *one of* the assignees.
 
 ### Search, filters, pagination

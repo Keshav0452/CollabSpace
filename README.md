@@ -48,7 +48,7 @@ concerns them changes.
 | **Projects** | Group related tasks. Archive and reactivate projects. Deleting a project keeps its tasks. |
 | **Tasks** | Title, description, status, priority, due date, project, and up to 20 assignees. Search across the workspace, filter by status, project or assignee, paginate. |
 | **Comments and activity** | Discuss a task. Only the author can edit or delete a comment. Every change is recorded with who made it. |
-| **Notifications** | Assignment, status-change and comment notifications with read/unread state and links to the task. They arrive live, without a refresh. |
+| **Notifications** | Notifications for being assigned to or removed from a task, status changes and comments, with read/unread state and links to the task. They arrive live, without a refresh. |
 | **Dashboard** | A summary of the workspace and its recent tasks. |
 
 ## Architecture
